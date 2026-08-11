@@ -553,6 +553,10 @@
     // 'growth' | 'universe'
     wallpaperDisplayMode: "square",
     // 'fill' | 'square'
+    wallpaperMode: "normal",
+    // 'normal' | 'frosted'
+    frostedBlur: 16,
+    // px — Gaussian blur strength for frosted mode
     wallpaperSwitchSeconds: 1,
     wallpaperOuterColor: "#ffffff",
     // ── Render config ─────────────────────────────────────────────────
@@ -1093,6 +1097,8 @@
         currentLanguage: AppState.currentLanguage,
         wallpaperRandomMode: AppState.wallpaperRandomMode,
         wallpaperDisplayMode: AppState.wallpaperDisplayMode,
+        wallpaperMode: AppState.wallpaperMode,
+        frostedBlur: AppState.frostedBlur,
         wallpaperSwitchSeconds: AppState.wallpaperSwitchSeconds,
         wallpaperOuterColor: AppState.wallpaperOuterColor,
         entity: serializeEntity(AppState.currentEntity),
@@ -1122,6 +1128,8 @@
       AppState.currentLanguage = s.currentLanguage === "zh" ? "zh" : "en";
       AppState.wallpaperRandomMode = ["growth", "universe"].includes(s.wallpaperRandomMode) ? s.wallpaperRandomMode : "growth";
       AppState.wallpaperDisplayMode = ["fill", "square"].includes(s.wallpaperDisplayMode) ? s.wallpaperDisplayMode : "square";
+      AppState.wallpaperMode = ["normal", "frosted"].includes(s.wallpaperMode) ? s.wallpaperMode : "normal";
+      AppState.frostedBlur = Number.isFinite(s.frostedBlur) ? clamp(Math.round(s.frostedBlur), 0, 40) : 16;
       AppState.wallpaperSwitchSeconds = Number.isFinite(s.wallpaperSwitchSeconds) ? clamp(Math.round(s.wallpaperSwitchSeconds * 10) / 10, 0.1, 3600) : 1;
       AppState.wallpaperOuterColor = /^#[0-9a-f]{6}$/i.test(s.wallpaperOuterColor || "") ? s.wallpaperOuterColor : "#ffffff";
       AppState.manualPaletteIndices = Array.isArray(s.manualPaletteIndices) ? s.manualPaletteIndices.map((x) => Math.floor(x)).filter((x) => x >= 0 && x < 32) : [];
@@ -1401,8 +1409,11 @@
     _syncRendererSlots(rendererName);
     _syncPaletteThemeSlots();
     updatePaletteUI();
-    document.getElementById("fill-mode-btn")?.classList.toggle("active", AppState.wallpaperDisplayMode === "fill");
-    document.getElementById("square-mode-btn")?.classList.toggle("active", AppState.wallpaperDisplayMode === "square");
+    const frosted = AppState.wallpaperMode === "frosted";
+    document.getElementById("fill-mode-btn")?.classList.toggle("active", frosted || AppState.wallpaperDisplayMode === "fill");
+    document.getElementById("square-mode-btn")?.classList.toggle("active", !frosted && AppState.wallpaperDisplayMode === "square");
+    document.getElementById("mode-normal-btn")?.classList.toggle("active", !frosted);
+    document.getElementById("mode-frosted-btn")?.classList.toggle("active", frosted);
     document.getElementById("growth-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "growth");
     document.getElementById("universe-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "universe");
   }
@@ -1432,12 +1443,13 @@
     const frame = document.getElementById("art-frame") || document.querySelector(".art-frame");
     const canvas = getCanvas();
     if (!frame || !canvas) return;
+    const isFrosted = AppState.wallpaperMode === "frosted";
     frame.id = "art-frame";
-    frame.classList.toggle("square", AppState.wallpaperDisplayMode === "square");
+    frame.classList.toggle("square", AppState.wallpaperDisplayMode === "square" && !isFrosted);
     document.body.style.backgroundColor = AppState.wallpaperOuterColor;
     frame.style.setProperty("--outer-bg", AppState.wallpaperOuterColor);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const square = AppState.wallpaperDisplayMode === "square";
+    const square = AppState.wallpaperDisplayMode === "square" && !isFrosted;
     const side = Math.max(480, Math.floor(Math.min(innerWidth, innerHeight) * 0.92 * dpr));
     canvas.width = square ? side : Math.max(720, Math.floor(innerWidth * dpr));
     canvas.height = square ? side : Math.max(480, Math.floor(innerHeight * dpr));
@@ -1445,7 +1457,34 @@
     document.getElementById("square-mode-btn")?.classList.toggle("active", square);
     const row = document.getElementById("outer-color-row");
     if (row) row.style.opacity = square ? "1" : ".45";
+    applyFrostedUI();
     if (redraw && AppState.currentEntity) drawArt(canvas, AppState.currentEntity);
+  }
+  function applyFrostedUI() {
+    const isFrosted = AppState.wallpaperMode === "frosted";
+    document.body.classList.toggle("frosted", isFrosted);
+    document.getElementById("mode-normal-btn")?.classList.toggle("active", !isFrosted);
+    document.getElementById("mode-frosted-btn")?.classList.toggle("active", isFrosted);
+    const overlay = document.getElementById("frosted-overlay");
+    if (overlay) overlay.style.setProperty("--frosted-blur", `${AppState.frostedBlur}px`);
+    const row = document.getElementById("frosted-blur-row");
+    if (row) row.style.opacity = isFrosted ? "1" : ".45";
+    const input = document.getElementById("frosted-blur");
+    if (input) input.value = String(AppState.frostedBlur);
+    updateText2("frosted-blur-value", `${AppState.frostedBlur}px`);
+  }
+  function setWallpaperMode(mode) {
+    if (!["normal", "frosted"].includes(mode)) return;
+    AppState.wallpaperMode = mode;
+    applyWallpaperDisplay();
+    saveState();
+  }
+  function setFrostedBlur(value) {
+    const v = clamp(Math.round(Number(value) || 0), 0, 40);
+    if (v === AppState.frostedBlur) return;
+    AppState.frostedBlur = v;
+    applyFrostedUI();
+    saveState();
   }
   function setWallpaperDisplayMode(mode) {
     if (!["fill", "square"].includes(mode)) return;
@@ -1911,6 +1950,11 @@
     updateMatrixUI(AppState.currentEntity);
     saveState();
   }
+  function updateSwitchStep(input) {
+    if (!input) return;
+    const v = Number(input.value);
+    input.step = Number.isFinite(v) && v < 1 ? "0.1" : "1";
+  }
   function bindControls(actions) {
     const { togglePause: togglePause2, hardReset: hardReset2, jumpLatentRegion: jumpLatentRegion2, nextWallpaper: nextWallpaper2 } = actions;
     const canvas = getCanvas();
@@ -1942,9 +1986,16 @@
       applyWallpaperDisplay(false);
       saveState();
     });
+    document.getElementById("mode-normal-btn")?.addEventListener("click", () => setWallpaperMode("normal"));
+    document.getElementById("mode-frosted-btn")?.addEventListener("click", () => setWallpaperMode("frosted"));
+    document.getElementById("frosted-blur")?.addEventListener("input", (event) => setFrostedBlur(event.target.value));
+    document.getElementById("switch-seconds")?.addEventListener("input", (event) => {
+      updateSwitchStep(event.target);
+    });
     document.getElementById("switch-seconds")?.addEventListener("change", (event) => {
       AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(event.target.value) || 60) * 10) / 10, 0.1, 3600);
       event.target.value = AppState.wallpaperSwitchSeconds;
+      updateSwitchStep(event.target);
       AppState.lastWallpaperSwitch = performance.now();
       saveState();
     });
@@ -2008,10 +2059,15 @@
         applyUserProperties(properties) {
           if (properties.randommode) setWallpaperRandomMode(properties.randommode.value === 1 ? "universe" : "growth");
           if (properties.displaymode) setWallpaperDisplayMode(properties.displaymode.value === 1 ? "square" : "fill");
+          if (properties.wallpapermode) setWallpaperMode(properties.wallpapermode.value === 1 ? "frosted" : "normal");
+          if (properties.frostedblur) setFrostedBlur(properties.frostedblur.value);
           if (properties.switchseconds) {
             AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(properties.switchseconds.value) || 60) * 10) / 10, 0.1, 3600);
             const el = document.getElementById("switch-seconds");
-            if (el) el.value = String(AppState.wallpaperSwitchSeconds);
+            if (el) {
+              el.value = String(AppState.wallpaperSwitchSeconds);
+              updateSwitchStep(el);
+            }
           }
           if (properties.axis) setAxisMode(["both", "x", "y"][properties.axis.value] || "both");
           if (properties.outercolor) {
@@ -2022,7 +2078,10 @@
       };
     }
     const switchEl = document.getElementById("switch-seconds");
-    if (switchEl) switchEl.value = String(AppState.wallpaperSwitchSeconds);
+    if (switchEl) {
+      switchEl.value = String(AppState.wallpaperSwitchSeconds);
+      updateSwitchStep(switchEl);
+    }
     const outerEl = document.getElementById("outer-color");
     if (outerEl) outerEl.value = AppState.wallpaperOuterColor;
     syncControlUI();
@@ -2126,6 +2185,8 @@
     AppState.currentLanguage = "en";
     AppState.wallpaperRandomMode = "growth";
     AppState.wallpaperDisplayMode = "square";
+    AppState.wallpaperMode = "normal";
+    AppState.frostedBlur = 16;
     AppState.wallpaperSwitchSeconds = 1;
     AppState.wallpaperOuterColor = "#ffffff";
     AppState.manualPaletteIndices = [];
@@ -2318,6 +2379,8 @@
     toggleSequenceRecording,
     exportUniverseBatchZip,
     exportMainCanvas,
+    setWallpaperMode,
+    setFrostedBlur,
     drawArt,
     getCanvas,
     startAnimation,

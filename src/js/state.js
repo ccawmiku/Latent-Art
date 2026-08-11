@@ -80,6 +80,8 @@ export function saveState() {
             currentLanguage:      AppState.currentLanguage,
             wallpaperRandomMode:  AppState.wallpaperRandomMode,
             wallpaperDisplayMode: AppState.wallpaperDisplayMode,
+            wallpaperMode:        AppState.wallpaperMode,
+            frostedBlur:          AppState.frostedBlur,
             wallpaperSwitchSeconds: AppState.wallpaperSwitchSeconds,
             wallpaperOuterColor:  AppState.wallpaperOuterColor,
             entity:               serializeEntity(AppState.currentEntity),
@@ -119,6 +121,8 @@ export function restoreSavedState() {
         AppState.currentLanguage   = s.currentLanguage === 'zh' ? 'zh' : 'en';
         AppState.wallpaperRandomMode  = ['growth', 'universe'].includes(s.wallpaperRandomMode) ? s.wallpaperRandomMode : 'growth';
         AppState.wallpaperDisplayMode = ['fill', 'square'].includes(s.wallpaperDisplayMode) ? s.wallpaperDisplayMode : 'square';
+        AppState.wallpaperMode    = ['normal', 'frosted'].includes(s.wallpaperMode) ? s.wallpaperMode : 'normal';
+        AppState.frostedBlur      = Number.isFinite(s.frostedBlur) ? clamp(Math.round(s.frostedBlur), 0, 40) : 16;
         AppState.wallpaperSwitchSeconds = Number.isFinite(s.wallpaperSwitchSeconds)
             ? clamp(Math.round(s.wallpaperSwitchSeconds * 10) / 10, 0.1, 3600) : 1;
         AppState.wallpaperOuterColor = /^#[0-9a-f]{6}$/i.test(s.wallpaperOuterColor || '')

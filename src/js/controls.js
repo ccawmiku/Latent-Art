@@ -20,7 +20,7 @@ import {
     clearManualPalette, applyLanguage, initPaletteSwatches, rebuildPaletteSwatches,
     updateText, updateMatrixUI,
 } from './ui.js';
-import { setWallpaperDisplayMode, setWallpaperRandomMode, applyWallpaperDisplay } from './wallpaper.js';
+import { setWallpaperDisplayMode, setWallpaperRandomMode, applyWallpaperDisplay, setWallpaperMode, setFrostedBlur } from './wallpaper.js';
 import { latentProjector, latentMapViewport, projectLatentTo2D }                  from './latentMap.js';
 import { exportMainCanvas, toggleSequenceRecording, exportUniverseBatchZip }      from './export.js';
 
@@ -154,6 +154,14 @@ function jumpToLatentMap(event) {
     saveState();
 }
 
+// ── Switch-seconds step: 0.1 s below 1 s, 1 s at/above 1 s ────────────────
+
+function updateSwitchStep(input) {
+    if (!input) return;
+    const v = Number(input.value);
+    input.step = (Number.isFinite(v) && v < 1) ? '0.1' : '1';
+}
+
 // ── Main binding function ─────────────────────────────────────────────────
 
 /**
@@ -201,9 +209,16 @@ export function bindControls(actions) {
         applyWallpaperDisplay(false);
         saveState();
     });
+    document.getElementById('mode-normal-btn')?.addEventListener('click',  () => setWallpaperMode('normal'));
+    document.getElementById('mode-frosted-btn')?.addEventListener('click', () => setWallpaperMode('frosted'));
+    document.getElementById('frosted-blur')?.addEventListener('input', event => setFrostedBlur(event.target.value));
+    document.getElementById('switch-seconds')?.addEventListener('input', event => {
+        updateSwitchStep(event.target);
+    });
     document.getElementById('switch-seconds')?.addEventListener('change', event => {
         AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(event.target.value) || 60) * 10) / 10, 0.1, 3600);
         event.target.value = AppState.wallpaperSwitchSeconds;
+        updateSwitchStep(event.target);
         AppState.lastWallpaperSwitch = performance.now();
         saveState();
     });
@@ -273,10 +288,12 @@ export function bindControls(actions) {
             applyUserProperties(properties) {
                 if (properties.randommode)    setWallpaperRandomMode(properties.randommode.value === 1 ? 'universe' : 'growth');
                 if (properties.displaymode)   setWallpaperDisplayMode(properties.displaymode.value === 1 ? 'square' : 'fill');
+                if (properties.wallpapermode) setWallpaperMode(properties.wallpapermode.value === 1 ? 'frosted' : 'normal');
+                if (properties.frostedblur)   setFrostedBlur(properties.frostedblur.value);
                 if (properties.switchseconds) {
                     AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(properties.switchseconds.value) || 60) * 10) / 10, 0.1, 3600);
                     const el = document.getElementById('switch-seconds');
-                    if (el) el.value = String(AppState.wallpaperSwitchSeconds);
+                    if (el) { el.value = String(AppState.wallpaperSwitchSeconds); updateSwitchStep(el); }
                 }
                 if (properties.axis) setAxisMode(['both', 'x', 'y'][properties.axis.value] || 'both');
                 if (properties.outercolor) {
@@ -289,7 +306,7 @@ export function bindControls(actions) {
 
     // ── Initial UI sync ───────────────────────────────────────────────
     const switchEl = document.getElementById('switch-seconds');
-    if (switchEl) switchEl.value = String(AppState.wallpaperSwitchSeconds);
+    if (switchEl) { switchEl.value = String(AppState.wallpaperSwitchSeconds); updateSwitchStep(switchEl); }
     const outerEl = document.getElementById('outer-color');
     if (outerEl) outerEl.value = AppState.wallpaperOuterColor;
 

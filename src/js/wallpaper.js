@@ -9,7 +9,7 @@ import { drawArt, getCanvas } from './renderer.js';
 import { saveState }          from './state.js';
 import { DecoderNetwork }     from './decoder.js';
 import { LatentEntity }       from './entity.js';
-import { createUniverseSeed } from './math.js';
+import { clamp, createUniverseSeed } from './math.js';
 import { latentTrail }        from './latentMap.js';
 import { updateText }         from './ui.js';
 
@@ -20,13 +20,16 @@ export function applyWallpaperDisplay(redraw = true) {
     const canvas = getCanvas();
     if (!frame || !canvas) return;
 
+    // Frosted mode forces fullscreen fill; display buttons below reflect it.
+    const isFrosted = AppState.wallpaperMode === 'frosted';
+
     frame.id = 'art-frame';
-    frame.classList.toggle('square', AppState.wallpaperDisplayMode === 'square');
+    frame.classList.toggle('square', AppState.wallpaperDisplayMode === 'square' && !isFrosted);
     document.body.style.backgroundColor = AppState.wallpaperOuterColor;
     frame.style.setProperty('--outer-bg', AppState.wallpaperOuterColor);
 
     const dpr    = Math.min(window.devicePixelRatio || 1, 2);
-    const square = AppState.wallpaperDisplayMode === 'square';
+    const square = AppState.wallpaperDisplayMode === 'square' && !isFrosted;
     const side   = Math.max(480, Math.floor(Math.min(innerWidth, innerHeight) * 0.92 * dpr));
     canvas.width  = square ? side : Math.max(720, Math.floor(innerWidth  * dpr));
     canvas.height = square ? side : Math.max(480, Math.floor(innerHeight * dpr));
@@ -37,7 +40,40 @@ export function applyWallpaperDisplay(redraw = true) {
     const row = document.getElementById('outer-color-row');
     if (row) row.style.opacity = square ? '1' : '.45';
 
+    applyFrostedUI();
+
     if (redraw && AppState.currentEntity) drawArt(canvas, AppState.currentEntity);
+}
+
+// ── Frosted (雾面) effect UI sync ─────────────────────────────────────────
+
+function applyFrostedUI() {
+    const isFrosted = AppState.wallpaperMode === 'frosted';
+    document.body.classList.toggle('frosted', isFrosted);
+    document.getElementById('mode-normal-btn')?.classList.toggle('active',  !isFrosted);
+    document.getElementById('mode-frosted-btn')?.classList.toggle('active', isFrosted);
+    const overlay = document.getElementById('frosted-overlay');
+    if (overlay) overlay.style.setProperty('--frosted-blur', `${AppState.frostedBlur}px`);
+    const row = document.getElementById('frosted-blur-row');
+    if (row) row.style.opacity = isFrosted ? '1' : '.45';
+    const input = document.getElementById('frosted-blur');
+    if (input) input.value = String(AppState.frostedBlur);
+    updateText('frosted-blur-value', `${AppState.frostedBlur}px`);
+}
+
+export function setWallpaperMode(mode) {
+    if (!['normal', 'frosted'].includes(mode)) return;
+    AppState.wallpaperMode = mode;
+    applyWallpaperDisplay();
+    saveState();
+}
+
+export function setFrostedBlur(value) {
+    const v = clamp(Math.round(Number(value) || 0), 0, 40);
+    if (v === AppState.frostedBlur) return;
+    AppState.frostedBlur = v;
+    applyFrostedUI();
+    saveState();
 }
 
 export function setWallpaperDisplayMode(mode) {

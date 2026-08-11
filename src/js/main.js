@@ -28,7 +28,7 @@ import {
     setPausedVisual, syncControlUI,
     updateText, applyLanguage, initMatrixUI, updateMatrixUI, clearManualPalette,
 } from './ui.js';
-import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper } from './wallpaper.js';
+import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper, setWallpaperMode, setFrostedBlur } from './wallpaper.js';
 import { setColorLimit, setRandomness, setAxisMode, setGeometryMode, setLayerMode, setActivationMode, setPalette, bindControls } from './controls.js';
 import { captureSequenceFrame, toggleSequenceRecording, exportUniverseBatchZip, exportMainCanvas, updateRecordButton } from './export.js';
 import { generateStripes }  from './renderers/linear.js';
@@ -50,6 +50,8 @@ function freshUniverse() {
     AppState.currentLanguage       = 'en';
     AppState.wallpaperRandomMode   = 'growth';
     AppState.wallpaperDisplayMode  = 'square';
+    AppState.wallpaperMode         = 'normal';
+    AppState.frostedBlur           = 16;
     AppState.wallpaperSwitchSeconds = 1;
     AppState.wallpaperOuterColor   = '#ffffff';
     AppState.manualPaletteIndices  = [];
@@ -289,6 +291,8 @@ Object.assign(window, {
     toggleSequenceRecording,
     exportUniverseBatchZip,
     exportMainCanvas,
+    setWallpaperMode,
+    setFrostedBlur,
     drawArt,
     getCanvas,
     startAnimation,

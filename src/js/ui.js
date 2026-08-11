@@ -266,8 +266,11 @@ export function syncControlUI() {
     updatePaletteUI();
 
     // Wallpaper-mode buttons
-    document.getElementById('fill-mode-btn')?.classList.toggle('active',     AppState.wallpaperDisplayMode === 'fill');
-    document.getElementById('square-mode-btn')?.classList.toggle('active',   AppState.wallpaperDisplayMode === 'square');
+    const frosted = AppState.wallpaperMode === 'frosted';
+    document.getElementById('fill-mode-btn')?.classList.toggle('active',     frosted || AppState.wallpaperDisplayMode === 'fill');
+    document.getElementById('square-mode-btn')?.classList.toggle('active',   !frosted && AppState.wallpaperDisplayMode === 'square');
+    document.getElementById('mode-normal-btn')?.classList.toggle('active',   !frosted);
+    document.getElementById('mode-frosted-btn')?.classList.toggle('active',  frosted);
     document.getElementById('growth-mode-btn')?.classList.toggle('active',   AppState.wallpaperRandomMode === 'growth');
     document.getElementById('universe-mode-btn')?.classList.toggle('active', AppState.wallpaperRandomMode === 'universe');
 }

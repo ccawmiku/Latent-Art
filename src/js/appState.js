@@ -23,6 +23,8 @@ export const AppState = {
     // ── Wallpaper modes ───────────────────────────────────────────────
     wallpaperRandomMode:   'growth',   // 'growth' | 'universe'
     wallpaperDisplayMode:  'square',   // 'fill' | 'square'
+    wallpaperMode:         'normal',   // 'normal' | 'frosted'
+    frostedBlur:           16,         // px — Gaussian blur strength for frosted mode
     wallpaperSwitchSeconds: 1,
     wallpaperOuterColor:   '#ffffff',
 

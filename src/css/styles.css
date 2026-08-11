@@ -397,6 +397,23 @@
         .subtle { color:var(--muted); font-size:.65rem; line-height:1.4; }
         @media (max-width:600px) { .art-frame.square { width:92vw; height:92vw; } .settings-panel { right:-2px; } }
 
+        /* Frosted (雾面) wallpaper mode: fullscreen Gaussian-blur overlay.
+           Layering: canvas (z-auto) < overlay (z:10) < .controls (z:20), so
+           buttons/settings stay sharp and clickable above the blur. */
+        .frosted-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 10;
+            pointer-events: none;
+            display: none;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(var(--frosted-blur, 16px));
+            -webkit-backdrop-filter: blur(var(--frosted-blur, 16px));
+        }
+        body.frosted .frosted-overlay { display: block; }
+        body.studio-view .frosted-overlay { display: none !important; }
+        body.frosted #display-mode-slot { opacity: .45; pointer-events: none; }
+
         /* Lightweight advanced controls opened by the star button. */
         body.studio-view .controls { position:fixed; right:24px; bottom:70px; left:24px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:18px; background:rgba(8,10,14,.72); box-shadow:0 18px 60px rgba(0,0,0,.32); backdrop-filter:blur(16px) saturate(135%); -webkit-backdrop-filter:blur(16px) saturate(135%); }
         body.studio-view .controls > * { display:flex !important; }
