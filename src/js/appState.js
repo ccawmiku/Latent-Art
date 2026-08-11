@@ -28,6 +28,22 @@ export const AppState = {
     wallpaperSwitchSeconds: 1,
     wallpaperOuterColor:   '#ffffff',
 
+    // ── Growth-mode journey (linear toward a target latent B) ─────────
+    growthSteps:     30,   // max steps per journey (5-120)
+    growthOvershoot: 65,   // overshoot fraction 0-100 — landing = B + os·(B−A)
+    growthStart:     null, // Float32Array A₀ — transient, not persisted
+    growthDelta:     null, // Float32Array B−A₀ — transient, not persisted
+    growthStepCount: 0,
+
+    // ── Wipe (逐条) journey — reveal target image one vertical band at a time
+    wipeTarget:     null, // Float32Array B — transient, not persisted
+    wipeCanvas:     null, // offscreen render of B — transient, not persisted
+    wipeStepCount:  0,
+
+    // ── Dim (逐维) journey — flip one latent dim per step
+    dimTarget:      null, // Float32Array B — transient, not persisted
+    dimIndex:       0,
+
     // ── Render config ─────────────────────────────────────────────────
     axisMode:       'both',   // 'both' | 'x' | 'y'
     layerMode:      'auto',   // 'auto' | 'xTop' | 'yTop'

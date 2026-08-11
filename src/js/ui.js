@@ -273,6 +273,29 @@ export function syncControlUI() {
     document.getElementById('mode-frosted-btn')?.classList.toggle('active',  frosted);
     document.getElementById('growth-mode-btn')?.classList.toggle('active',   AppState.wallpaperRandomMode === 'growth');
     document.getElementById('universe-mode-btn')?.classList.toggle('active', AppState.wallpaperRandomMode === 'universe');
+    document.getElementById('wipe-mode-btn')?.classList.toggle('active',     AppState.wallpaperRandomMode === 'wipe');
+    document.getElementById('dim-mode-btn')?.classList.toggle('active',      AppState.wallpaperRandomMode === 'dim');
+
+    // Growth-mode params (hidden when the mode doesn't use them)
+    const gSteps = document.getElementById('growth-steps');
+    if (gSteps) gSteps.value = String(AppState.growthSteps);
+    const gOs = document.getElementById('growth-overshoot');
+    if (gOs) gOs.value = String(AppState.growthOvershoot);
+    updateText('growth-overshoot-value', `${AppState.growthOvershoot}%`);
+
+    _applySettingsVisibility();
+}
+
+// ── Settings visibility: hide options the current mode doesn't support ────
+function _applySettingsVisibility() {
+    const isFrosted = AppState.wallpaperMode === 'frosted';
+    document.getElementById('frosted-blur-row')?.classList.toggle('hidden', !isFrosted);
+    document.getElementById('display-controls')?.classList.toggle('hidden', isFrosted);
+
+    const rm = AppState.wallpaperRandomMode;
+    const showGrowth = rm === 'growth' || rm === 'wipe';
+    document.getElementById('growth-controls')?.classList.toggle('hidden', !showGrowth);
+    document.getElementById('growth-overshoot-row')?.classList.toggle('hidden', rm !== 'growth');
 }
 
 function _syncButtonGroup(idToValueMap, activeValue) {

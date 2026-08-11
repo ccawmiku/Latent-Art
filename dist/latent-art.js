@@ -559,6 +559,26 @@
     // px — Gaussian blur strength for frosted mode
     wallpaperSwitchSeconds: 1,
     wallpaperOuterColor: "#ffffff",
+    // ── Growth-mode journey (linear toward a target latent B) ─────────
+    growthSteps: 30,
+    // max steps per journey (5-120)
+    growthOvershoot: 65,
+    // overshoot fraction 0-100 — landing = B + os·(B−A)
+    growthStart: null,
+    // Float32Array A₀ — transient, not persisted
+    growthDelta: null,
+    // Float32Array B−A₀ — transient, not persisted
+    growthStepCount: 0,
+    // ── Wipe (逐条) journey — reveal target image one vertical band at a time
+    wipeTarget: null,
+    // Float32Array B — transient, not persisted
+    wipeCanvas: null,
+    // offscreen render of B — transient, not persisted
+    wipeStepCount: 0,
+    // ── Dim (逐维) journey — flip one latent dim per step
+    dimTarget: null,
+    // Float32Array B — transient, not persisted
+    dimIndex: 0,
     // ── Render config ─────────────────────────────────────────────────
     axisMode: "both",
     // 'both' | 'x' | 'y'
@@ -1101,6 +1121,8 @@
         frostedBlur: AppState.frostedBlur,
         wallpaperSwitchSeconds: AppState.wallpaperSwitchSeconds,
         wallpaperOuterColor: AppState.wallpaperOuterColor,
+        growthSteps: AppState.growthSteps,
+        growthOvershoot: AppState.growthOvershoot,
         entity: serializeEntity(AppState.currentEntity),
         decoder: serializeDecoder(AppState.universeDecoder)
       };
@@ -1132,6 +1154,16 @@
       AppState.frostedBlur = Number.isFinite(s.frostedBlur) ? clamp(Math.round(s.frostedBlur), 0, 40) : 16;
       AppState.wallpaperSwitchSeconds = Number.isFinite(s.wallpaperSwitchSeconds) ? clamp(Math.round(s.wallpaperSwitchSeconds * 10) / 10, 0.1, 3600) : 1;
       AppState.wallpaperOuterColor = /^#[0-9a-f]{6}$/i.test(s.wallpaperOuterColor || "") ? s.wallpaperOuterColor : "#ffffff";
+      AppState.growthSteps = Number.isFinite(s.growthSteps) ? clamp(Math.floor(s.growthSteps), 5, 120) : 30;
+      AppState.growthOvershoot = Number.isFinite(s.growthOvershoot) ? clamp(Math.round(s.growthOvershoot), 0, 100) : 65;
+      AppState.growthStart = null;
+      AppState.growthDelta = null;
+      AppState.growthStepCount = 0;
+      AppState.wipeTarget = null;
+      AppState.wipeCanvas = null;
+      AppState.wipeStepCount = 0;
+      AppState.dimTarget = null;
+      AppState.dimIndex = 0;
       AppState.manualPaletteIndices = Array.isArray(s.manualPaletteIndices) ? s.manualPaletteIndices.map((x) => Math.floor(x)).filter((x) => x >= 0 && x < 32) : [];
       AppState.lastPersistFrame = AppState.generationCount;
       const rawRenderer = s.rendererName || s.geometryMode || "linear";
@@ -1416,6 +1448,23 @@
     document.getElementById("mode-frosted-btn")?.classList.toggle("active", frosted);
     document.getElementById("growth-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "growth");
     document.getElementById("universe-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "universe");
+    document.getElementById("wipe-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "wipe");
+    document.getElementById("dim-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "dim");
+    const gSteps = document.getElementById("growth-steps");
+    if (gSteps) gSteps.value = String(AppState.growthSteps);
+    const gOs = document.getElementById("growth-overshoot");
+    if (gOs) gOs.value = String(AppState.growthOvershoot);
+    updateText2("growth-overshoot-value", `${AppState.growthOvershoot}%`);
+    _applySettingsVisibility();
+  }
+  function _applySettingsVisibility() {
+    const isFrosted = AppState.wallpaperMode === "frosted";
+    document.getElementById("frosted-blur-row")?.classList.toggle("hidden", !isFrosted);
+    document.getElementById("display-controls")?.classList.toggle("hidden", isFrosted);
+    const rm = AppState.wallpaperRandomMode;
+    const showGrowth = rm === "growth" || rm === "wipe";
+    document.getElementById("growth-controls")?.classList.toggle("hidden", !showGrowth);
+    document.getElementById("growth-overshoot-row")?.classList.toggle("hidden", rm !== "growth");
   }
   function _syncButtonGroup(idToValueMap, activeValue) {
     for (const [id, val] of Object.entries(idToValueMap)) {
@@ -1467,8 +1516,6 @@
     document.getElementById("mode-frosted-btn")?.classList.toggle("active", isFrosted);
     const overlay = document.getElementById("frosted-overlay");
     if (overlay) overlay.style.setProperty("--frosted-blur", `${AppState.frostedBlur}px`);
-    const row = document.getElementById("frosted-blur-row");
-    if (row) row.style.opacity = isFrosted ? "1" : ".45";
     const input = document.getElementById("frosted-blur");
     if (input) input.value = String(AppState.frostedBlur);
     updateText2("frosted-blur-value", `${AppState.frostedBlur}px`);
@@ -1477,6 +1524,7 @@
     if (!["normal", "frosted"].includes(mode)) return;
     AppState.wallpaperMode = mode;
     applyWallpaperDisplay();
+    syncControlUI();
     saveState();
   }
   function setFrostedBlur(value) {
@@ -1493,12 +1541,117 @@
     saveState();
   }
   function setWallpaperRandomMode(mode) {
-    if (!["growth", "universe"].includes(mode)) return;
+    if (!["growth", "universe", "wipe", "dim"].includes(mode)) return;
     AppState.wallpaperRandomMode = mode;
     AppState.lastWallpaperSwitch = performance.now();
+    AppState.growthStart = null;
+    AppState.growthDelta = null;
+    AppState.growthStepCount = 0;
+    AppState.wipeTarget = null;
+    AppState.wipeCanvas = null;
+    AppState.wipeStepCount = 0;
+    AppState.dimTarget = null;
+    AppState.dimIndex = 0;
     document.getElementById("growth-mode-btn")?.classList.toggle("active", mode === "growth");
     document.getElementById("universe-mode-btn")?.classList.toggle("active", mode === "universe");
+    document.getElementById("wipe-mode-btn")?.classList.toggle("active", mode === "wipe");
+    document.getElementById("dim-mode-btn")?.classList.toggle("active", mode === "dim");
+    syncControlUI();
     saveState();
+  }
+  function generateGrowthTarget() {
+    const entity = AppState.currentEntity;
+    if (!entity) return;
+    AppState.growthStart = Float32Array.from(entity.z);
+    const B = new Float32Array(LATENT_DIM);
+    for (let i = 0; i < LATENT_DIM; i++) B[i] = randNormal() * 1.2;
+    AppState.growthDelta = new Float32Array(LATENT_DIM);
+    for (let i = 0; i < LATENT_DIM; i++) AppState.growthDelta[i] = B[i] - AppState.growthStart[i];
+    AppState.growthStepCount = 0;
+  }
+  function growthAdvanceStep() {
+    const entity = AppState.currentEntity;
+    if (!entity) return;
+    if (!AppState.growthStart || !AppState.growthDelta) generateGrowthTarget();
+    const A = AppState.growthStart;
+    const D = AppState.growthDelta;
+    const z = entity.z;
+    const os = 1 + Math.min(AppState.growthOvershoot, 95) / 100;
+    AppState.growthStepCount++;
+    const p = Math.min(AppState.growthStepCount / AppState.growthSteps, 1);
+    for (let i = 0; i < LATENT_DIM; i++) {
+      z[i] = A[i] + p * os * D[i];
+      if (z[i] > 5.5) z[i] = 5.5;
+      if (z[i] < -5.5) z[i] = -5.5;
+    }
+    if (AppState.growthStepCount >= AppState.growthSteps) generateGrowthTarget();
+  }
+  function setGrowthSteps(value) {
+    const v = clamp(Math.round(Number(value) || 30), 5, 120);
+    if (v === AppState.growthSteps) return;
+    AppState.growthSteps = v;
+    syncControlUI();
+    saveState();
+  }
+  function setGrowthOvershoot(value) {
+    const v = clamp(Math.round(Number(value) || 0), 0, 100);
+    if (v === AppState.growthOvershoot) return;
+    AppState.growthOvershoot = v;
+    syncControlUI();
+    saveState();
+  }
+  function generateWipeTarget() {
+    const canvas = getCanvas();
+    if (!canvas) return;
+    const B = new Float32Array(LATENT_DIM);
+    for (let i = 0; i < LATENT_DIM; i++) B[i] = randNormal() * 1.2;
+    const off = document.createElement("canvas");
+    off.width = canvas.width;
+    off.height = canvas.height;
+    const temp = new LatentEntity();
+    temp.z.set(B);
+    drawArt(off, temp, { updatePanels: false });
+    AppState.wipeTarget = B;
+    AppState.wipeCanvas = off;
+    AppState.wipeStepCount = 0;
+  }
+  function advanceWipe() {
+    const canvas = getCanvas();
+    if (!canvas || !AppState.currentEntity) return;
+    if (!AppState.wipeTarget || !AppState.wipeCanvas) {
+      generateWipeTarget();
+      return;
+    }
+    if (AppState.wipeCanvas.width !== canvas.width || AppState.wipeCanvas.height !== canvas.height) {
+      generateWipeTarget();
+      return;
+    }
+    const total = Math.max(1, AppState.growthSteps);
+    const stripeWidth = Math.max(1, Math.ceil(canvas.width / total));
+    const sx = AppState.wipeStepCount * stripeWidth;
+    const sw = Math.min(stripeWidth, canvas.width - sx);
+    if (sw > 0) {
+      canvas.getContext("2d").drawImage(AppState.wipeCanvas, sx, 0, sw, canvas.height, sx, 0, sw, canvas.height);
+    }
+    AppState.wipeStepCount++;
+    if (AppState.wipeStepCount >= total) {
+      AppState.currentEntity.z.set(AppState.wipeTarget);
+      generateWipeTarget();
+    }
+  }
+  function generateDimTarget() {
+    const B = new Float32Array(LATENT_DIM);
+    for (let i = 0; i < LATENT_DIM; i++) B[i] = randNormal() * 1.2;
+    AppState.dimTarget = B;
+    AppState.dimIndex = 0;
+  }
+  function advanceDim() {
+    const entity = AppState.currentEntity;
+    if (!entity) return;
+    if (!AppState.dimTarget) generateDimTarget();
+    entity.z[AppState.dimIndex] = AppState.dimTarget[AppState.dimIndex];
+    AppState.dimIndex++;
+    if (AppState.dimIndex >= LATENT_DIM) generateDimTarget();
   }
   function advanceWallpaper() {
     if (!AppState.currentEntity || !AppState.universeDecoder) return;
@@ -1508,9 +1661,12 @@
       AppState.currentEntity = new LatentEntity();
       latentTrail.length = 0;
       AppState.previousDecoderState = null;
+    } else if (AppState.wallpaperRandomMode === "wipe") {
+      advanceWipe();
+    } else if (AppState.wallpaperRandomMode === "dim") {
+      advanceDim();
     } else {
-      const speed = (AppState.lastParams?.stepMod ?? 0.04) * Math.max(AppState.randomnessLevel, 0.2);
-      AppState.currentEntity.step(speed);
+      growthAdvanceStep();
     }
     AppState.generationCount++;
   }
@@ -1518,7 +1674,7 @@
     if (!AppState.currentEntity || !AppState.universeDecoder) return;
     advanceWallpaper();
     AppState.lastWallpaperSwitch = performance.now();
-    drawArt(getCanvas(), AppState.currentEntity);
+    if (AppState.wallpaperRandomMode !== "wipe") drawArt(getCanvas(), AppState.currentEntity);
     updateText2("gen-counter", AppState.generationCount);
     saveState();
   }
@@ -1979,6 +2135,8 @@
     }
     document.getElementById("growth-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("growth"));
     document.getElementById("universe-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("universe"));
+    document.getElementById("wipe-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("wipe"));
+    document.getElementById("dim-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("dim"));
     document.getElementById("fill-mode-btn")?.addEventListener("click", () => setWallpaperDisplayMode("fill"));
     document.getElementById("square-mode-btn")?.addEventListener("click", () => setWallpaperDisplayMode("square"));
     document.getElementById("outer-color")?.addEventListener("input", (event) => {
@@ -1989,6 +2147,8 @@
     document.getElementById("mode-normal-btn")?.addEventListener("click", () => setWallpaperMode("normal"));
     document.getElementById("mode-frosted-btn")?.addEventListener("click", () => setWallpaperMode("frosted"));
     document.getElementById("frosted-blur")?.addEventListener("input", (event) => setFrostedBlur(event.target.value));
+    document.getElementById("growth-steps")?.addEventListener("change", (event) => setGrowthSteps(event.target.value));
+    document.getElementById("growth-overshoot")?.addEventListener("input", (event) => setGrowthOvershoot(event.target.value));
     document.getElementById("switch-seconds")?.addEventListener("input", (event) => {
       updateSwitchStep(event.target);
     });
@@ -2057,10 +2217,12 @@
     if (window.wallpaperPropertyListener === void 0) {
       window.wallpaperPropertyListener = {
         applyUserProperties(properties) {
-          if (properties.randommode) setWallpaperRandomMode(properties.randommode.value === 1 ? "universe" : "growth");
+          if (properties.randommode) setWallpaperRandomMode(["growth", "universe", "wipe", "dim"][properties.randommode.value] || "growth");
           if (properties.displaymode) setWallpaperDisplayMode(properties.displaymode.value === 1 ? "square" : "fill");
           if (properties.wallpapermode) setWallpaperMode(properties.wallpapermode.value === 1 ? "frosted" : "normal");
           if (properties.frostedblur) setFrostedBlur(properties.frostedblur.value);
+          if (properties.growthsteps) setGrowthSteps(properties.growthsteps.value);
+          if (properties.growthovershoot) setGrowthOvershoot(properties.growthovershoot.value);
           if (properties.switchseconds) {
             AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(properties.switchseconds.value) || 60) * 10) / 10, 0.1, 3600);
             const el = document.getElementById("switch-seconds");
@@ -2189,6 +2351,16 @@
     AppState.frostedBlur = 16;
     AppState.wallpaperSwitchSeconds = 1;
     AppState.wallpaperOuterColor = "#ffffff";
+    AppState.growthSteps = 30;
+    AppState.growthOvershoot = 65;
+    AppState.growthStart = null;
+    AppState.growthDelta = null;
+    AppState.growthStepCount = 0;
+    AppState.wipeTarget = null;
+    AppState.wipeCanvas = null;
+    AppState.wipeStepCount = 0;
+    AppState.dimTarget = null;
+    AppState.dimIndex = 0;
     AppState.manualPaletteIndices = [];
     randomizeRuntimeControls();
     setActiveRendererName("linear");
@@ -2231,7 +2403,7 @@
     if (timestamp - AppState.lastWallpaperSwitch >= AppState.wallpaperSwitchSeconds * 1e3) {
       AppState.lastWallpaperSwitch = timestamp;
       advanceWallpaper();
-      drawArt(getCanvas(), AppState.currentEntity);
+      if (AppState.wallpaperRandomMode !== "wipe") drawArt(getCanvas(), AppState.currentEntity);
       captureSequenceFrame(AppState.currentEntity, AppState.generationCount);
       updateText2("gen-counter", AppState.generationCount);
       updateMatrixUI(AppState.currentEntity);
@@ -2271,6 +2443,14 @@
     randomizeRuntimeControls();
     AppState.manualPaletteIndices = [];
     AppState.colorLimit = 0;
+    AppState.growthStart = null;
+    AppState.growthDelta = null;
+    AppState.growthStepCount = 0;
+    AppState.wipeTarget = null;
+    AppState.wipeCanvas = null;
+    AppState.wipeStepCount = 0;
+    AppState.dimTarget = null;
+    AppState.dimIndex = 0;
     AppState.layerMode = "auto";
     AppState.activationMode = "relu";
     updateText2("gen-counter", AppState.generationCount);
@@ -2285,6 +2465,13 @@
     AppState.currentEntity.jump(0.55);
     latentTrail.length = 0;
     AppState.previousDecoderState = null;
+    AppState.growthStart = null;
+    AppState.growthDelta = null;
+    AppState.wipeTarget = null;
+    AppState.wipeCanvas = null;
+    AppState.wipeStepCount = 0;
+    AppState.dimTarget = null;
+    AppState.dimIndex = 0;
     drawArt(getCanvas(), AppState.currentEntity);
     updateMatrixUI(AppState.currentEntity);
     saveState();
@@ -2381,6 +2568,8 @@
     exportMainCanvas,
     setWallpaperMode,
     setFrostedBlur,
+    setGrowthSteps,
+    setGrowthOvershoot,
     drawArt,
     getCanvas,
     startAnimation,

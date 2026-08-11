@@ -84,6 +84,8 @@ export function saveState() {
             frostedBlur:          AppState.frostedBlur,
             wallpaperSwitchSeconds: AppState.wallpaperSwitchSeconds,
             wallpaperOuterColor:  AppState.wallpaperOuterColor,
+            growthSteps:     AppState.growthSteps,
+            growthOvershoot: AppState.growthOvershoot,
             entity:               serializeEntity(AppState.currentEntity),
             decoder:              serializeDecoder(AppState.universeDecoder),
         };
@@ -127,6 +129,16 @@ export function restoreSavedState() {
             ? clamp(Math.round(s.wallpaperSwitchSeconds * 10) / 10, 0.1, 3600) : 1;
         AppState.wallpaperOuterColor = /^#[0-9a-f]{6}$/i.test(s.wallpaperOuterColor || '')
             ? s.wallpaperOuterColor : '#ffffff';
+        AppState.growthSteps     = Number.isFinite(s.growthSteps) ? clamp(Math.floor(s.growthSteps), 5, 120) : 30;
+        AppState.growthOvershoot = Number.isFinite(s.growthOvershoot) ? clamp(Math.round(s.growthOvershoot), 0, 100) : 65;
+        AppState.growthStart     = null;   // transient — regenerated on first growth step
+        AppState.growthDelta     = null;
+        AppState.growthStepCount = 0;
+        AppState.wipeTarget      = null;   // transient — regenerated on first wipe step
+        AppState.wipeCanvas      = null;
+        AppState.wipeStepCount   = 0;
+        AppState.dimTarget       = null;   // transient — regenerated on first dim step
+        AppState.dimIndex        = 0;
         AppState.manualPaletteIndices = Array.isArray(s.manualPaletteIndices)
             ? s.manualPaletteIndices.map(x => Math.floor(x)).filter(x => x >= 0 && x < 32) : [];
         AppState.lastPersistFrame  = AppState.generationCount;

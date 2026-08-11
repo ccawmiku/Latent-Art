@@ -19,10 +19,17 @@
             <button class="action-btn" id="settings-btn" type="button" aria-label="设置">⚙</button>
             <div class="settings-panel" id="settings-panel">
                 <div class="section-label">RANDOM MODE</div>
-                <div class="segmented"><button class="action-btn active" id="growth-mode-btn" type="button">步进成长型</button><button class="action-btn" id="universe-mode-btn" type="button">随机宇宙型</button></div>
-                <div class="section-label">DISPLAY</div>
-                <div class="segmented" id="display-mode-slot"><button class="action-btn active" id="fill-mode-btn" type="button">满铺</button><button class="action-btn" id="square-mode-btn" type="button">正方形居中</button></div>
-                <label class="control-panel" id="outer-color-row">四周颜色 <input id="outer-color" type="color" value="#ffffff" /></label>
+                <div class="segmented"><button class="action-btn active" id="growth-mode-btn" type="button">步进成长型</button><button class="action-btn" id="universe-mode-btn" type="button">随机宇宙型</button><button class="action-btn" id="wipe-mode-btn" type="button">逐条过渡</button><button class="action-btn" id="dim-mode-btn" type="button">逐维过渡</button></div>
+                <div class="settings-group" id="growth-controls">
+                    <div class="section-label">GROWTH</div>
+                    <label class="control-panel">步数 <input id="growth-steps" type="number" min="5" max="120" step="1" value="30" /><span>步</span></label>
+                    <label class="control-panel" id="growth-overshoot-row">过冲 <input id="growth-overshoot" type="range" min="0" max="100" step="1" value="65" /><span id="growth-overshoot-value">65%</span></label>
+                </div>
+                <div class="settings-group" id="display-controls">
+                    <div class="section-label">DISPLAY</div>
+                    <div class="segmented" id="display-mode-slot"><button class="action-btn active" id="fill-mode-btn" type="button">满铺</button><button class="action-btn" id="square-mode-btn" type="button">正方形居中</button></div>
+                    <label class="control-panel" id="outer-color-row">四周颜色 <input id="outer-color" type="color" value="#ffffff" /></label>
+                </div>
                 <div class="section-label">EFFECT</div>
                 <div class="segmented"><button class="action-btn active" id="mode-normal-btn" type="button">正常</button><button class="action-btn" id="mode-frosted-btn" type="button">雾面</button></div>
                 <label class="control-panel" id="frosted-blur-row">模糊强度 <input id="frosted-blur" type="range" min="0" max="40" step="1" value="16" /><span id="frosted-blur-value">16px</span></label>

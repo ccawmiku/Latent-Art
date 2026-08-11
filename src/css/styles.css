@@ -384,6 +384,8 @@
         .settings-panel.open { display:flex; }
         .settings-panel .control-panel { justify-content:space-between; background:rgba(255,255,255,.05); border-radius:6px; padding:9px 10px; }
         .settings-panel .section-label { margin-top:4px; color:#fff; font-size:.68rem; letter-spacing:.14em; }
+        .settings-group { display:flex; flex-direction:column; gap:10px; }
+        .settings-panel .hidden { display:none !important; }
         .segmented { display:flex; gap:4px; }
         .segmented .action-btn { flex:1; }
         .palette-panel { width:auto; margin:0; align-items:flex-start; flex-wrap:wrap; }
@@ -412,7 +414,6 @@
         }
         body.frosted .frosted-overlay { display: block; }
         body.studio-view .frosted-overlay { display: none !important; }
-        body.frosted #display-mode-slot { opacity: .45; pointer-events: none; }
 
         /* Lightweight advanced controls opened by the star button. */
         body.studio-view .controls { position:fixed; right:24px; bottom:70px; left:24px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:18px; background:rgba(8,10,14,.72); box-shadow:0 18px 60px rgba(0,0,0,.32); backdrop-filter:blur(16px) saturate(135%); -webkit-backdrop-filter:blur(16px) saturate(135%); }

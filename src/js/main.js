@@ -28,7 +28,7 @@ import {
     setPausedVisual, syncControlUI,
     updateText, applyLanguage, initMatrixUI, updateMatrixUI, clearManualPalette,
 } from './ui.js';
-import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper, setWallpaperMode, setFrostedBlur } from './wallpaper.js';
+import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot } from './wallpaper.js';
 import { setColorLimit, setRandomness, setAxisMode, setGeometryMode, setLayerMode, setActivationMode, setPalette, bindControls } from './controls.js';
 import { captureSequenceFrame, toggleSequenceRecording, exportUniverseBatchZip, exportMainCanvas, updateRecordButton } from './export.js';
 import { generateStripes }  from './renderers/linear.js';
@@ -54,6 +54,16 @@ function freshUniverse() {
     AppState.frostedBlur           = 16;
     AppState.wallpaperSwitchSeconds = 1;
     AppState.wallpaperOuterColor   = '#ffffff';
+    AppState.growthSteps           = 30;
+    AppState.growthOvershoot       = 65;
+    AppState.growthStart           = null;
+    AppState.growthDelta           = null;
+    AppState.growthStepCount       = 0;
+    AppState.wipeTarget            = null;
+    AppState.wipeCanvas            = null;
+    AppState.wipeStepCount         = 0;
+    AppState.dimTarget             = null;
+    AppState.dimIndex              = 0;
     AppState.manualPaletteIndices  = [];
     randomizeRuntimeControls();
     setActiveRendererName('linear');
@@ -110,7 +120,8 @@ function loop(timestamp) {
     if (timestamp - AppState.lastWallpaperSwitch >= AppState.wallpaperSwitchSeconds * 1000) {
         AppState.lastWallpaperSwitch = timestamp;
         advanceWallpaper();
-        drawArt(getCanvas(), AppState.currentEntity);
+        // Wipe mode draws its own stripe; a redraw would erase it.
+        if (AppState.wallpaperRandomMode !== 'wipe') drawArt(getCanvas(), AppState.currentEntity);
         captureSequenceFrame(AppState.currentEntity, AppState.generationCount);
         updateText('gen-counter', AppState.generationCount);
         updateMatrixUI(AppState.currentEntity);
@@ -161,6 +172,14 @@ function hardReset() {
     randomizeRuntimeControls();
     AppState.manualPaletteIndices  = [];
     AppState.colorLimit            = 0;
+    AppState.growthStart           = null;
+    AppState.growthDelta           = null;
+    AppState.growthStepCount       = 0;
+    AppState.wipeTarget            = null;
+    AppState.wipeCanvas            = null;
+    AppState.wipeStepCount         = 0;
+    AppState.dimTarget             = null;
+    AppState.dimIndex              = 0;
     AppState.layerMode             = 'auto';
     AppState.activationMode        = 'relu';
 
@@ -178,6 +197,13 @@ function jumpLatentRegion() {
     AppState.currentEntity.jump(0.55);
     latentTrail.length            = 0;
     AppState.previousDecoderState = null;
+    AppState.growthStart          = null;
+    AppState.growthDelta          = null;
+    AppState.wipeTarget           = null;
+    AppState.wipeCanvas           = null;
+    AppState.wipeStepCount        = 0;
+    AppState.dimTarget            = null;
+    AppState.dimIndex             = 0;
     drawArt(getCanvas(), AppState.currentEntity);
     updateMatrixUI(AppState.currentEntity);
     saveState();
@@ -293,6 +319,8 @@ Object.assign(window, {
     exportMainCanvas,
     setWallpaperMode,
     setFrostedBlur,
+    setGrowthSteps,
+    setGrowthOvershoot,
     drawArt,
     getCanvas,
     startAnimation,

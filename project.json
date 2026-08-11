@@ -7,11 +7,13 @@
   "visibility": "private",
   "general": {
     "properties": {
-      "randommode": { "text": "Random mode (0 growth / 1 universe)", "type": "slider", "value": 0, "min": 0, "max": 1, "step": 1 },
+      "randommode": { "text": "Random mode (0 growth / 1 universe / 2 wipe / 3 dim)", "type": "slider", "value": 0, "min": 0, "max": 3, "step": 1 },
       "displaymode": { "text": "Display (0 fill / 1 centered square)", "type": "slider", "value": 0, "min": 0, "max": 1, "step": 1 },
       "wallpapermode": { "text": "Effect (0 normal / 1 frosted)", "type": "slider", "value": 0, "min": 0, "max": 1, "step": 1 },
       "frostedblur": { "text": "Frosted blur (px)", "type": "slider", "value": 16, "min": 0, "max": 40, "step": 1 },
       "switchseconds": { "text": "Switch interval (seconds)", "type": "slider", "value": 60, "min": 0.1, "max": 3600, "step": 0.1 },
+      "growthsteps": { "text": "Growth journey steps (cap)", "type": "slider", "value": 30, "min": 5, "max": 120, "step": 1 },
+      "growthovershoot": { "text": "Growth overshoot (0-100)", "type": "slider", "value": 65, "min": 0, "max": 100, "step": 1 },
       "axis": { "text": "Axis (0 XY / 1 X / 2 Y)", "type": "slider", "value": 0, "min": 0, "max": 2, "step": 1 },
       "outercolor": { "text": "Outer color", "type": "color", "value": "#080808" }
     }

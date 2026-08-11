@@ -9,9 +9,10 @@ import { drawArt, getCanvas } from './renderer.js';
 import { saveState }          from './state.js';
 import { DecoderNetwork }     from './decoder.js';
 import { LatentEntity }       from './entity.js';
-import { clamp, createUniverseSeed } from './math.js';
+import { clamp, createUniverseSeed, randNormal } from './math.js';
+import { LATENT_DIM }                            from './constants.js';
 import { latentTrail }        from './latentMap.js';
-import { updateText }         from './ui.js';
+import { updateText, syncControlUI } from './ui.js';
 
 // ── Display mode ──────────────────────────────────────────────────────────
 
@@ -54,8 +55,6 @@ function applyFrostedUI() {
     document.getElementById('mode-frosted-btn')?.classList.toggle('active', isFrosted);
     const overlay = document.getElementById('frosted-overlay');
     if (overlay) overlay.style.setProperty('--frosted-blur', `${AppState.frostedBlur}px`);
-    const row = document.getElementById('frosted-blur-row');
-    if (row) row.style.opacity = isFrosted ? '1' : '.45';
     const input = document.getElementById('frosted-blur');
     if (input) input.value = String(AppState.frostedBlur);
     updateText('frosted-blur-value', `${AppState.frostedBlur}px`);
@@ -65,6 +64,7 @@ export function setWallpaperMode(mode) {
     if (!['normal', 'frosted'].includes(mode)) return;
     AppState.wallpaperMode = mode;
     applyWallpaperDisplay();
+    syncControlUI();
     saveState();
 }
 
@@ -86,12 +86,145 @@ export function setWallpaperDisplayMode(mode) {
 // ── Random mode ───────────────────────────────────────────────────────────
 
 export function setWallpaperRandomMode(mode) {
-    if (!['growth', 'universe'].includes(mode)) return;
+    if (!['growth', 'universe', 'wipe', 'dim'].includes(mode)) return;
     AppState.wallpaperRandomMode = mode;
     AppState.lastWallpaperSwitch = performance.now();
+    // Reset transient journey state on every mode switch
+    AppState.growthStart     = null;
+    AppState.growthDelta     = null;
+    AppState.growthStepCount = 0;
+    AppState.wipeTarget      = null;
+    AppState.wipeCanvas      = null;
+    AppState.wipeStepCount   = 0;
+    AppState.dimTarget       = null;
+    AppState.dimIndex        = 0;
     document.getElementById('growth-mode-btn')?.classList.toggle('active',   mode === 'growth');
     document.getElementById('universe-mode-btn')?.classList.toggle('active', mode === 'universe');
+    document.getElementById('wipe-mode-btn')?.classList.toggle('active',     mode === 'wipe');
+    document.getElementById('dim-mode-btn')?.classList.toggle('active',      mode === 'dim');
+    syncControlUI();
     saveState();
+}
+
+// ── Growth-mode linear journey ────────────────────────────────────────────
+
+/**
+ * Start a new journey: freeze the current position as A, generate a random
+ * target B, and precompute the A→B delta. The trajectory is a straight line.
+ */
+export function generateGrowthTarget() {
+    const entity = AppState.currentEntity;
+    if (!entity) return;
+    AppState.growthStart = Float32Array.from(entity.z);
+    const B = new Float32Array(LATENT_DIM);
+    for (let i = 0; i < LATENT_DIM; i++) B[i] = randNormal() * 1.2;
+    AppState.growthDelta = new Float32Array(LATENT_DIM);
+    for (let i = 0; i < LATENT_DIM; i++) AppState.growthDelta[i] = B[i] - AppState.growthStart[i];
+    AppState.growthStepCount = 0;
+}
+
+/**
+ * One linear step of the journey: z = A + p·(1+overshoot)·(B−A). The landing
+ * point extends past B by the overshoot fraction; on the final step that
+ * landing position becomes the new A and a fresh B is generated in advance.
+ */
+export function growthAdvanceStep() {
+    const entity = AppState.currentEntity;
+    if (!entity) return;
+    if (!AppState.growthStart || !AppState.growthDelta) generateGrowthTarget();
+    const A  = AppState.growthStart;
+    const D  = AppState.growthDelta;
+    const z  = entity.z;
+    const os = 1 + Math.min(AppState.growthOvershoot, 95) / 100;
+
+    AppState.growthStepCount++;
+    const p = Math.min(AppState.growthStepCount / AppState.growthSteps, 1);
+
+    for (let i = 0; i < LATENT_DIM; i++) {
+        z[i] = A[i] + p * os * D[i];
+        if (z[i] >  5.5) z[i] =  5.5;
+        if (z[i] < -5.5) z[i] = -5.5;
+    }
+
+    if (AppState.growthStepCount >= AppState.growthSteps) generateGrowthTarget();
+}
+
+export function setGrowthSteps(value) {
+    const v = clamp(Math.round(Number(value) || 30), 5, 120);
+    if (v === AppState.growthSteps) return;
+    AppState.growthSteps = v;
+    syncControlUI();
+    saveState();
+}
+
+export function setGrowthOvershoot(value) {
+    const v = clamp(Math.round(Number(value) || 0), 0, 100);
+    if (v === AppState.growthOvershoot) return;
+    AppState.growthOvershoot = v;
+    syncControlUI();
+    saveState();
+}
+
+// ── Wipe (逐条) journey — reveal target image one vertical band at a time ──
+
+function generateWipeTarget() {
+    const canvas = getCanvas();
+    if (!canvas) return;
+    const B = new Float32Array(LATENT_DIM);
+    for (let i = 0; i < LATENT_DIM; i++) B[i] = randNormal() * 1.2;
+
+    const off = document.createElement('canvas');
+    off.width  = canvas.width;
+    off.height = canvas.height;
+    const temp = new LatentEntity();
+    temp.z.set(B);
+    drawArt(off, temp, { updatePanels: false });
+
+    AppState.wipeTarget    = B;
+    AppState.wipeCanvas    = off;
+    AppState.wipeStepCount = 0;
+}
+
+export function advanceWipe() {
+    const canvas = getCanvas();
+    if (!canvas || !AppState.currentEntity) return;
+    if (!AppState.wipeTarget || !AppState.wipeCanvas) { generateWipeTarget(); return; }
+    if (AppState.wipeCanvas.width !== canvas.width || AppState.wipeCanvas.height !== canvas.height) {
+        generateWipeTarget();
+        return;
+    }
+
+    const total       = Math.max(1, AppState.growthSteps);
+    const stripeWidth = Math.max(1, Math.ceil(canvas.width / total));
+    const sx          = AppState.wipeStepCount * stripeWidth;
+    const sw          = Math.min(stripeWidth, canvas.width - sx);
+    if (sw > 0) {
+        canvas.getContext('2d').drawImage(AppState.wipeCanvas, sx, 0, sw, canvas.height, sx, 0, sw, canvas.height);
+    }
+    AppState.wipeStepCount++;
+
+    if (AppState.wipeStepCount >= total) {
+        AppState.currentEntity.z.set(AppState.wipeTarget);
+        generateWipeTarget();
+    }
+}
+
+// ── Dim (逐维) journey — flip one latent dim to its target value per step ──
+
+function generateDimTarget() {
+    const B = new Float32Array(LATENT_DIM);
+    for (let i = 0; i < LATENT_DIM; i++) B[i] = randNormal() * 1.2;
+    AppState.dimTarget = B;
+    AppState.dimIndex  = 0;
+}
+
+export function advanceDim() {
+    const entity = AppState.currentEntity;
+    if (!entity) return;
+    if (!AppState.dimTarget) generateDimTarget();
+    entity.z[AppState.dimIndex] = AppState.dimTarget[AppState.dimIndex];
+    AppState.dimIndex++;
+    if (AppState.dimIndex >= LATENT_DIM) generateDimTarget();
 }
 
 // ── Advance + next ────────────────────────────────────────────────────────
@@ -105,10 +238,12 @@ export function advanceWallpaper() {
         AppState.currentEntity         = new LatentEntity();
         latentTrail.length             = 0;
         AppState.previousDecoderState  = null;
+    } else if (AppState.wallpaperRandomMode === 'wipe') {
+        advanceWipe();
+    } else if (AppState.wallpaperRandomMode === 'dim') {
+        advanceDim();
     } else {
-        const speed = (AppState.lastParams?.stepMod ?? 0.04)
-                    * Math.max(AppState.randomnessLevel, 0.2);
-        AppState.currentEntity.step(speed);
+        growthAdvanceStep();
     }
     AppState.generationCount++;
 }
@@ -117,7 +252,8 @@ export function nextWallpaper() {
     if (!AppState.currentEntity || !AppState.universeDecoder) return;
     advanceWallpaper();
     AppState.lastWallpaperSwitch = performance.now();
-    drawArt(getCanvas(), AppState.currentEntity);
+    // Wipe draws its stripe inside advanceWipe — a full redraw would erase it
+    if (AppState.wallpaperRandomMode !== 'wipe') drawArt(getCanvas(), AppState.currentEntity);
     updateText('gen-counter', AppState.generationCount);
     saveState();
 }

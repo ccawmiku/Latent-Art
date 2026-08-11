@@ -20,7 +20,7 @@ import {
     clearManualPalette, applyLanguage, initPaletteSwatches, rebuildPaletteSwatches,
     updateText, updateMatrixUI,
 } from './ui.js';
-import { setWallpaperDisplayMode, setWallpaperRandomMode, applyWallpaperDisplay, setWallpaperMode, setFrostedBlur } from './wallpaper.js';
+import { setWallpaperDisplayMode, setWallpaperRandomMode, applyWallpaperDisplay, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot } from './wallpaper.js';
 import { latentProjector, latentMapViewport, projectLatentTo2D }                  from './latentMap.js';
 import { exportMainCanvas, toggleSequenceRecording, exportUniverseBatchZip }      from './export.js';
 
@@ -200,8 +200,10 @@ export function bindControls(actions) {
     }
 
     // ── Wallpaper modes ───────────────────────────────────────────────
-    document.getElementById('growth-mode-btn')?.addEventListener('click', () => setWallpaperRandomMode('growth'));
+    document.getElementById('growth-mode-btn')?.addEventListener('click',   () => setWallpaperRandomMode('growth'));
     document.getElementById('universe-mode-btn')?.addEventListener('click', () => setWallpaperRandomMode('universe'));
+    document.getElementById('wipe-mode-btn')?.addEventListener('click',     () => setWallpaperRandomMode('wipe'));
+    document.getElementById('dim-mode-btn')?.addEventListener('click',      () => setWallpaperRandomMode('dim'));
     document.getElementById('fill-mode-btn')?.addEventListener('click',   () => setWallpaperDisplayMode('fill'));
     document.getElementById('square-mode-btn')?.addEventListener('click', () => setWallpaperDisplayMode('square'));
     document.getElementById('outer-color')?.addEventListener('input', event => {
@@ -212,6 +214,8 @@ export function bindControls(actions) {
     document.getElementById('mode-normal-btn')?.addEventListener('click',  () => setWallpaperMode('normal'));
     document.getElementById('mode-frosted-btn')?.addEventListener('click', () => setWallpaperMode('frosted'));
     document.getElementById('frosted-blur')?.addEventListener('input', event => setFrostedBlur(event.target.value));
+    document.getElementById('growth-steps')?.addEventListener('change',  event => setGrowthSteps(event.target.value));
+    document.getElementById('growth-overshoot')?.addEventListener('input', event => setGrowthOvershoot(event.target.value));
     document.getElementById('switch-seconds')?.addEventListener('input', event => {
         updateSwitchStep(event.target);
     });
@@ -286,10 +290,12 @@ export function bindControls(actions) {
     if (window.wallpaperPropertyListener === undefined) {
         window.wallpaperPropertyListener = {
             applyUserProperties(properties) {
-                if (properties.randommode)    setWallpaperRandomMode(properties.randommode.value === 1 ? 'universe' : 'growth');
+                if (properties.randommode)    setWallpaperRandomMode(['growth', 'universe', 'wipe', 'dim'][properties.randommode.value] || 'growth');
                 if (properties.displaymode)   setWallpaperDisplayMode(properties.displaymode.value === 1 ? 'square' : 'fill');
                 if (properties.wallpapermode) setWallpaperMode(properties.wallpapermode.value === 1 ? 'frosted' : 'normal');
                 if (properties.frostedblur)   setFrostedBlur(properties.frostedblur.value);
+                if (properties.growthsteps)     setGrowthSteps(properties.growthsteps.value);
+                if (properties.growthovershoot) setGrowthOvershoot(properties.growthovershoot.value);
                 if (properties.switchseconds) {
                     AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(properties.switchseconds.value) || 60) * 10) / 10, 0.1, 3600);
                     const el = document.getElementById('switch-seconds');
