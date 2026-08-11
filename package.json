@@ -1,0 +1,20 @@
+{
+  "name": "latent-art-wallpaper",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Procedural latent-art wallpaper for Wallpaper Engine, with extensible renderers and palettes.",
+  "scripts": {
+    "build": "esbuild src/js/main.js --bundle --format=iife --outfile=dist/latent-art.js",
+    "build:watch": "esbuild src/js/main.js --bundle --format=iife --watch --outfile=dist/latent-art.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "serve": "python server.py"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1",
+    "vitest": "^3.0.0"
+  }
+}
