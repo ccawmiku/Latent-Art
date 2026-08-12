@@ -92,7 +92,7 @@ export function drawArt(canvas, entity, options = {}) {
     const renderer = getActiveRenderer();
     // The renderer may return its structural parts (stripes) for the wipe mode.
     // cellSize (>1) snaps the target render to a structural grid for wipe.
-    AppState.lastParts = renderer.render(ctx, {
+    AppState.lastParts      = renderer.render(ctx, {
         params,
         axisMode:      AppState.axisMode,
         layerMode:     AppState.layerMode,
@@ -103,6 +103,7 @@ export function drawArt(canvas, entity, options = {}) {
         paletteColors,
         cellSize:      options.cellSize || 1,
     }) || null;
+    AppState.lastEdgeExpand = params.edgeExpand || 0;
 
     // ── Param overlay ─────────────────────────────────────────────────
     if (updatePanels) {

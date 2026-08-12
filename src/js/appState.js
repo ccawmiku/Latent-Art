@@ -35,8 +35,9 @@ export const AppState = {
     growthDelta:     null, // Float32Array B−A₀ — transient, not persisted
     growthStepCount: 0,
 
-    // ── Wipe (逐条) journey — reveal target image's structural pieces at random
+    // ── Wipe (逐条) journey — reveal target image's structural pieces
     wipeCell:       16,   // structural grid cell px: 4|8|16|32|64 (persisted)
+    wipeOrder:      'ordered', // 'ordered' = bottom→top draw order | 'random' = random xy
     wipeTarget:     null, // Float32Array B — transient, not persisted
     wipeCanvas:     null, // offscreen render of B — transient, not persisted
     wipeUnits:      null, // shuffled [{x,y,w,h}] reveal rects tiling the canvas
@@ -48,6 +49,7 @@ export const AppState = {
 
     // Renderer structural parts from the last drawArt (used by wipe target render)
     lastParts:      null, // transient, not persisted
+    lastEdgeExpand: 0,    // matching draw dilation for exact stripe fills
 
     // ── Render config ─────────────────────────────────────────────────
     axisMode:       'both',   // 'both' | 'x' | 'y'

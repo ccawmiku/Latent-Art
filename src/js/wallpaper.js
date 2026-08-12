@@ -10,7 +10,7 @@ import { saveState }          from './state.js';
 import { DecoderNetwork }     from './decoder.js';
 import { LatentEntity }       from './entity.js';
 import { clamp, createUniverseSeed, randNormal } from './math.js';
-import { LATENT_DIM }                            from './constants.js';
+import { LATENT_DIM, STRIPE_BACKGROUND }        from './constants.js';
 import { latentTrail }        from './latentMap.js';
 import { updateText, syncControlUI } from './ui.js';
 
@@ -165,15 +165,48 @@ export function setGrowthOvershoot(value) {
     saveState();
 }
 
-// ── Wipe (逐条) journey — reveal target image's structural pieces at random ──
+// ── Wipe (逐条) journey — reveal target image's structural pieces ──────────
 
 /**
- * Turn the renderer's stripe parts into a set of rectangles that tile the
- * canvas: B's vertical stripes + the gaps between them (full-height bands,
- * which also carry the horizontal stripes/background content) + B's
- * horizontal stripes (full-width bands). Revealing all of them equals B.
+ * Reveal units for the ORDERED mode (bottom→top draw order): the background
+ * gaps first, then B's stripes in their recorded draw order (the parts array
+ * is already sorted so later = on top). Each is a solid color fill, so top
+ * stripes visibly cover bottom ones — matching the cover relations.
  */
-function buildWipeUnits(parts, w, h) {
+function buildOrderedUnits(parts, w, h, edgeExpand) {
+    const dilate   = n => Math.max(1, Math.round(n + (edgeExpand || 0)));
+    const units    = [];
+    const vStripes = parts.filter(p => p.dir === 'vertical').slice().sort((a, b) => a.pos - b.pos);
+
+    // Background gaps — the bottom-most layer
+    let cursor = 0;
+    for (const s of vStripes) {
+        const p   = Math.max(0, Math.round(s.pos));
+        const end = Math.min(w, p + dilate(s.size));
+        if (end <= p) continue;
+        if (p > cursor) units.push({ kind: 'fill', color: STRIPE_BACKGROUND, x: cursor, y: 0, w: p - cursor, h });
+        cursor = Math.max(cursor, end);
+    }
+    if (cursor < w) units.push({ kind: 'fill', color: STRIPE_BACKGROUND, x: cursor, y: 0, w: w - cursor, h });
+
+    // Stripes in draw order (bottom to top)
+    for (const s of parts) {
+        if (s.dir === 'vertical') {
+            units.push({ kind: 'fill', color: s.color, x: Math.round(s.pos), y: 0, w: dilate(s.size), h });
+        } else {
+            units.push({ kind: 'fill', color: s.color, x: 0, y: Math.round(s.pos), w, h: dilate(s.size) });
+        }
+    }
+    return units;
+}
+
+/**
+ * Reveal units for the RANDOM mode: B's vertical stripes + the gaps between
+ * them + B's horizontal stripes, shuffled. Each is a region copied from B's
+ * finished render (drawImage), so any crossing content is already correct.
+ */
+function buildRandomUnits(parts, w, h, edgeExpand) {
+    const dilate   = n => Math.max(1, Math.round(n + (edgeExpand || 0)));
     const units    = [];
     const vStripes = parts.filter(p => p.dir === 'vertical').slice().sort((a, b) => a.pos - b.pos);
     const hStripes = parts.filter(p => p.dir === 'horizontal');
@@ -181,21 +214,28 @@ function buildWipeUnits(parts, w, h) {
     let cursor = 0;
     for (const s of vStripes) {
         const p   = Math.max(0, Math.round(s.pos));
-        const sw  = Math.max(1, Math.round(s.size + 1));
+        const sw  = dilate(s.size);
         const end = Math.min(w, p + sw);
         if (end <= p) continue;
-        if (p > cursor) units.push({ x: cursor, y: 0, w: p - cursor, h });
-        units.push({ x: p, y: 0, w: end - p, h });
+        if (p > cursor) units.push({ kind: 'region', x: cursor, y: 0, w: p - cursor, h });
+        units.push({ kind: 'region', x: p, y: 0, w: end - p, h });
         cursor = Math.max(cursor, end);
     }
-    if (cursor < w) units.push({ x: cursor, y: 0, w: w - cursor, h });
+    if (cursor < w) units.push({ kind: 'region', x: cursor, y: 0, w: w - cursor, h });
 
     for (const s of hStripes) {
         const p  = Math.max(0, Math.round(s.pos));
-        const sh = Math.max(1, Math.round(s.size + 1));
-        units.push({ x: 0, y: p, w, h: Math.min(h, sh) });
+        const sh = dilate(s.size);
+        units.push({ kind: 'region', x: 0, y: p, w, h: Math.min(h, sh) });
     }
     return units;
+}
+
+function shuffleUnits(units) {
+    for (let i = units.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [units[i], units[j]] = [units[j], units[i]];
+    }
 }
 
 function generateWipeTarget() {
@@ -209,27 +249,27 @@ function generateWipeTarget() {
     off.height = canvas.height;
     const temp = new LatentEntity();
     temp.z.set(B);
-    AppState.lastParts = null; // read B's parts, not a stale render
+    AppState.lastParts      = null; // read B's parts, not a stale render
+    AppState.lastEdgeExpand = 0;
     // Only the wipe target snaps to the structural grid; normal renders don't
     drawArt(off, temp, { updatePanels: false, cellSize: AppState.wipeCell });
 
+    const parts = (Array.isArray(AppState.lastParts) && AppState.lastParts.length > 0) ? AppState.lastParts : null;
     let units = [];
-    if (Array.isArray(AppState.lastParts) && AppState.lastParts.length > 0) {
-        units = buildWipeUnits(AppState.lastParts, canvas.width, canvas.height);
+    if (parts && AppState.wipeOrder === 'ordered') {
+        units = buildOrderedUnits(parts, canvas.width, canvas.height, AppState.lastEdgeExpand);
+    } else if (parts) {
+        units = buildRandomUnits(parts, canvas.width, canvas.height, AppState.lastEdgeExpand);
+        shuffleUnits(units);
     } else {
         // Fallback (non-stripe renderers): uniform vertical bands, random order
         const bandCount = Math.max(10, Math.min(60, Math.round(canvas.width / 40)));
         const bw        = Math.ceil(canvas.width / bandCount);
         for (let i = 0; i < bandCount; i++) {
             const x = i * bw;
-            units.push({ x, y: 0, w: Math.min(bw, canvas.width - x), h: canvas.height });
+            units.push({ kind: 'region', x, y: 0, w: Math.min(bw, canvas.width - x), h: canvas.height });
         }
-    }
-
-    // Fisher-Yates — reveal in random xy order instead of a sequential sweep
-    for (let i = units.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [units[i], units[j]] = [units[j], units[i]];
+        shuffleUnits(units);
     }
 
     AppState.wipeTarget    = B;
@@ -249,8 +289,14 @@ export function advanceWipe() {
 
     const units = AppState.wipeUnits;
     if (AppState.wipeStepCount < units.length) {
-        const u = units[AppState.wipeStepCount];
-        canvas.getContext('2d').drawImage(AppState.wipeCanvas, u.x, u.y, u.w, u.h, u.x, u.y, u.w, u.h);
+        const u  = units[AppState.wipeStepCount];
+        const ctx = canvas.getContext('2d');
+        if (u.kind === 'fill') {
+            ctx.fillStyle = u.color;
+            ctx.fillRect(u.x, u.y, u.w, u.h);
+        } else {
+            ctx.drawImage(AppState.wipeCanvas, u.x, u.y, u.w, u.h, u.x, u.y, u.w, u.h);
+        }
     }
     AppState.wipeStepCount++;
 
@@ -258,6 +304,19 @@ export function advanceWipe() {
         AppState.currentEntity.z.set(AppState.wipeTarget);
         generateWipeTarget();
     }
+}
+
+export function setWipeOrder(order) {
+    if (!['ordered', 'random'].includes(order)) return;
+    if (order === AppState.wipeOrder) return;
+    AppState.wipeOrder = order;
+    // Restart the journey with the new reveal order (re-render target B)
+    AppState.wipeTarget    = null;
+    AppState.wipeCanvas    = null;
+    AppState.wipeUnits     = null;
+    AppState.wipeStepCount = 0;
+    syncControlUI();
+    saveState();
 }
 
 export function setWipeCell(cell) {

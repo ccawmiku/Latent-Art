@@ -68,6 +68,7 @@
   var STORAGE_KEY = "latent-art-canvas-v3-state";
   var STRIPE_DENSITY_SCALE = 0.62;
   var TAU = Math.PI * 2;
+  var STRIPE_BACKGROUND = "#fafafa";
 
   // src/js/renderers/base.js
   function assertRenderer(name, renderer) {
@@ -202,7 +203,7 @@
       const h = ctx.canvas.height;
       ctx.globalAlpha = 1;
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "#fafafa";
+      ctx.fillStyle = STRIPE_BACKGROUND;
       ctx.fillRect(0, 0, w, h);
       const vConfig = {
         density: params.vDensity * STRIPE_DENSITY_SCALE * (0.75 + params.familyBalance * 0.5),
@@ -585,9 +586,11 @@
     growthDelta: null,
     // Float32Array B−A₀ — transient, not persisted
     growthStepCount: 0,
-    // ── Wipe (逐条) journey — reveal target image's structural pieces at random
+    // ── Wipe (逐条) journey — reveal target image's structural pieces
     wipeCell: 16,
     // structural grid cell px: 4|8|16|32|64 (persisted)
+    wipeOrder: "ordered",
+    // 'ordered' = bottom→top draw order | 'random' = random xy
     wipeTarget: null,
     // Float32Array B — transient, not persisted
     wipeCanvas: null,
@@ -602,6 +605,8 @@
     // Renderer structural parts from the last drawArt (used by wipe target render)
     lastParts: null,
     // transient, not persisted
+    lastEdgeExpand: 0,
+    // matching draw dilation for exact stripe fills
     // ── Render config ─────────────────────────────────────────────────
     axisMode: "both",
     // 'both' | 'x' | 'y'
@@ -1058,6 +1063,7 @@
       paletteColors,
       cellSize: options.cellSize || 1
     }) || null;
+    AppState.lastEdgeExpand = params.edgeExpand || 0;
     if (updatePanels) {
       const isRadial = getActiveRendererName() === "radial";
       updateText("param-colors", params.paletteIndices.length);
@@ -1148,6 +1154,7 @@
         growthSteps: AppState.growthSteps,
         growthOvershoot: AppState.growthOvershoot,
         wipeCell: AppState.wipeCell,
+        wipeOrder: AppState.wipeOrder,
         entity: serializeEntity(AppState.currentEntity),
         decoder: serializeDecoder(AppState.universeDecoder)
       };
@@ -1182,6 +1189,7 @@
       AppState.growthSteps = Number.isFinite(s.growthSteps) ? clamp(Math.floor(s.growthSteps), 5, 120) : 30;
       AppState.growthOvershoot = Number.isFinite(s.growthOvershoot) ? clamp(Math.round(s.growthOvershoot), 0, 100) : 65;
       AppState.wipeCell = [4, 8, 16, 32, 64].includes(s.wipeCell) ? s.wipeCell : 16;
+      AppState.wipeOrder = s.wipeOrder === "random" ? "random" : "ordered";
       AppState.growthStart = null;
       AppState.growthDelta = null;
       AppState.growthStepCount = 0;
@@ -1484,6 +1492,7 @@
     if (gOs) gOs.value = String(AppState.growthOvershoot);
     updateText2("growth-overshoot-value", `${AppState.growthOvershoot}%`);
     _syncButtonGroup({ "wipe-cell-4": 4, "wipe-cell-8": 8, "wipe-cell-16": 16, "wipe-cell-32": 32, "wipe-cell-64": 64 }, AppState.wipeCell);
+    _syncButtonGroup({ "wipe-order-ordered": "ordered", "wipe-order-random": "random" }, AppState.wipeOrder);
     _applySettingsVisibility();
   }
   function _applySettingsVisibility() {
@@ -1630,27 +1639,56 @@
     syncControlUI();
     saveState();
   }
-  function buildWipeUnits(parts, w, h) {
+  function buildOrderedUnits(parts, w, h, edgeExpand) {
+    const dilate = (n) => Math.max(1, Math.round(n + (edgeExpand || 0)));
+    const units = [];
+    const vStripes = parts.filter((p) => p.dir === "vertical").slice().sort((a, b) => a.pos - b.pos);
+    let cursor = 0;
+    for (const s of vStripes) {
+      const p = Math.max(0, Math.round(s.pos));
+      const end = Math.min(w, p + dilate(s.size));
+      if (end <= p) continue;
+      if (p > cursor) units.push({ kind: "fill", color: STRIPE_BACKGROUND, x: cursor, y: 0, w: p - cursor, h });
+      cursor = Math.max(cursor, end);
+    }
+    if (cursor < w) units.push({ kind: "fill", color: STRIPE_BACKGROUND, x: cursor, y: 0, w: w - cursor, h });
+    for (const s of parts) {
+      if (s.dir === "vertical") {
+        units.push({ kind: "fill", color: s.color, x: Math.round(s.pos), y: 0, w: dilate(s.size), h });
+      } else {
+        units.push({ kind: "fill", color: s.color, x: 0, y: Math.round(s.pos), w, h: dilate(s.size) });
+      }
+    }
+    return units;
+  }
+  function buildRandomUnits(parts, w, h, edgeExpand) {
+    const dilate = (n) => Math.max(1, Math.round(n + (edgeExpand || 0)));
     const units = [];
     const vStripes = parts.filter((p) => p.dir === "vertical").slice().sort((a, b) => a.pos - b.pos);
     const hStripes = parts.filter((p) => p.dir === "horizontal");
     let cursor = 0;
     for (const s of vStripes) {
       const p = Math.max(0, Math.round(s.pos));
-      const sw = Math.max(1, Math.round(s.size + 1));
+      const sw = dilate(s.size);
       const end = Math.min(w, p + sw);
       if (end <= p) continue;
-      if (p > cursor) units.push({ x: cursor, y: 0, w: p - cursor, h });
-      units.push({ x: p, y: 0, w: end - p, h });
+      if (p > cursor) units.push({ kind: "region", x: cursor, y: 0, w: p - cursor, h });
+      units.push({ kind: "region", x: p, y: 0, w: end - p, h });
       cursor = Math.max(cursor, end);
     }
-    if (cursor < w) units.push({ x: cursor, y: 0, w: w - cursor, h });
+    if (cursor < w) units.push({ kind: "region", x: cursor, y: 0, w: w - cursor, h });
     for (const s of hStripes) {
       const p = Math.max(0, Math.round(s.pos));
-      const sh = Math.max(1, Math.round(s.size + 1));
-      units.push({ x: 0, y: p, w, h: Math.min(h, sh) });
+      const sh = dilate(s.size);
+      units.push({ kind: "region", x: 0, y: p, w, h: Math.min(h, sh) });
     }
     return units;
+  }
+  function shuffleUnits(units) {
+    for (let i = units.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [units[i], units[j]] = [units[j], units[i]];
+    }
   }
   function generateWipeTarget() {
     const canvas = getCanvas();
@@ -1663,21 +1701,23 @@
     const temp = new LatentEntity();
     temp.z.set(B);
     AppState.lastParts = null;
+    AppState.lastEdgeExpand = 0;
     drawArt(off, temp, { updatePanels: false, cellSize: AppState.wipeCell });
+    const parts = Array.isArray(AppState.lastParts) && AppState.lastParts.length > 0 ? AppState.lastParts : null;
     let units = [];
-    if (Array.isArray(AppState.lastParts) && AppState.lastParts.length > 0) {
-      units = buildWipeUnits(AppState.lastParts, canvas.width, canvas.height);
+    if (parts && AppState.wipeOrder === "ordered") {
+      units = buildOrderedUnits(parts, canvas.width, canvas.height, AppState.lastEdgeExpand);
+    } else if (parts) {
+      units = buildRandomUnits(parts, canvas.width, canvas.height, AppState.lastEdgeExpand);
+      shuffleUnits(units);
     } else {
       const bandCount = Math.max(10, Math.min(60, Math.round(canvas.width / 40)));
       const bw = Math.ceil(canvas.width / bandCount);
       for (let i = 0; i < bandCount; i++) {
         const x = i * bw;
-        units.push({ x, y: 0, w: Math.min(bw, canvas.width - x), h: canvas.height });
+        units.push({ kind: "region", x, y: 0, w: Math.min(bw, canvas.width - x), h: canvas.height });
       }
-    }
-    for (let i = units.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [units[i], units[j]] = [units[j], units[i]];
+      shuffleUnits(units);
     }
     AppState.wipeTarget = B;
     AppState.wipeCanvas = off;
@@ -1698,13 +1738,30 @@
     const units = AppState.wipeUnits;
     if (AppState.wipeStepCount < units.length) {
       const u = units[AppState.wipeStepCount];
-      canvas.getContext("2d").drawImage(AppState.wipeCanvas, u.x, u.y, u.w, u.h, u.x, u.y, u.w, u.h);
+      const ctx = canvas.getContext("2d");
+      if (u.kind === "fill") {
+        ctx.fillStyle = u.color;
+        ctx.fillRect(u.x, u.y, u.w, u.h);
+      } else {
+        ctx.drawImage(AppState.wipeCanvas, u.x, u.y, u.w, u.h, u.x, u.y, u.w, u.h);
+      }
     }
     AppState.wipeStepCount++;
     if (AppState.wipeStepCount >= units.length) {
       AppState.currentEntity.z.set(AppState.wipeTarget);
       generateWipeTarget();
     }
+  }
+  function setWipeOrder(order) {
+    if (!["ordered", "random"].includes(order)) return;
+    if (order === AppState.wipeOrder) return;
+    AppState.wipeOrder = order;
+    AppState.wipeTarget = null;
+    AppState.wipeCanvas = null;
+    AppState.wipeUnits = null;
+    AppState.wipeStepCount = 0;
+    syncControlUI();
+    saveState();
   }
   function setWipeCell(cell) {
     if (![4, 8, 16, 32, 64].includes(cell)) return;
@@ -2220,6 +2277,8 @@
     document.getElementById("wipe-cell-16")?.addEventListener("click", () => setWipeCell(16));
     document.getElementById("wipe-cell-32")?.addEventListener("click", () => setWipeCell(32));
     document.getElementById("wipe-cell-64")?.addEventListener("click", () => setWipeCell(64));
+    document.getElementById("wipe-order-ordered")?.addEventListener("click", () => setWipeOrder("ordered"));
+    document.getElementById("wipe-order-random")?.addEventListener("click", () => setWipeOrder("random"));
     document.getElementById("fill-mode-btn")?.addEventListener("click", () => setWallpaperDisplayMode("fill"));
     document.getElementById("square-mode-btn")?.addEventListener("click", () => setWallpaperDisplayMode("square"));
     document.getElementById("outer-color")?.addEventListener("input", (event) => {
@@ -2307,6 +2366,7 @@
           if (properties.growthsteps) setGrowthSteps(properties.growthsteps.value);
           if (properties.growthovershoot) setGrowthOvershoot(properties.growthovershoot.value);
           if (properties.wipecell) setWipeCell([4, 8, 16, 32, 64][properties.wipecell.value]);
+          if (properties.wipeorder) setWipeOrder(properties.wipeorder.value === 1 ? "random" : "ordered");
           if (properties.switchseconds) {
             AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(properties.switchseconds.value) || 60) * 10) / 10, 0.1, 3600);
             const el = document.getElementById("switch-seconds");
@@ -2441,6 +2501,7 @@
     AppState.growthDelta = null;
     AppState.growthStepCount = 0;
     AppState.wipeCell = 16;
+    AppState.wipeOrder = "ordered";
     AppState.wipeTarget = null;
     AppState.wipeCanvas = null;
     AppState.wipeUnits = null;
@@ -2662,6 +2723,7 @@
     setGrowthSteps,
     setGrowthOvershoot,
     setWipeCell,
+    setWipeOrder,
     drawArt,
     getCanvas,
     startAnimation,

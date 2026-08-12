@@ -6,7 +6,7 @@
  */
 
 import { clamp } from '../math.js';
-import { STRIPE_DENSITY_SCALE } from '../constants.js';
+import { STRIPE_DENSITY_SCALE, STRIPE_BACKGROUND } from '../constants.js';
 import { registerRenderer } from './registry.js';
 import { sortPartsForLayerMode } from './sort.js';
 
@@ -111,7 +111,7 @@ export const linearRenderer = {
 
         ctx.globalAlpha = 1;
         ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#fafafa';
+        ctx.fillStyle = STRIPE_BACKGROUND;
         ctx.fillRect(0, 0, w, h);
 
         const vConfig = {

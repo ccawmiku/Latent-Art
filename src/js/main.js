@@ -28,7 +28,7 @@ import {
     setPausedVisual, syncControlUI,
     updateText, applyLanguage, initMatrixUI, updateMatrixUI, clearManualPalette,
 } from './ui.js';
-import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot, setWipeCell } from './wallpaper.js';
+import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot, setWipeCell, setWipeOrder } from './wallpaper.js';
 import { setColorLimit, setRandomness, setAxisMode, setGeometryMode, setLayerMode, setActivationMode, setPalette, bindControls } from './controls.js';
 import { captureSequenceFrame, toggleSequenceRecording, exportUniverseBatchZip, exportMainCanvas, updateRecordButton } from './export.js';
 import { generateStripes }  from './renderers/linear.js';
@@ -60,6 +60,7 @@ function freshUniverse() {
     AppState.growthDelta           = null;
     AppState.growthStepCount       = 0;
     AppState.wipeCell              = 16;
+    AppState.wipeOrder             = 'ordered';
     AppState.wipeTarget            = null;
     AppState.wipeCanvas            = null;
     AppState.wipeUnits             = null;
@@ -329,6 +330,7 @@ Object.assign(window, {
     setGrowthSteps,
     setGrowthOvershoot,
     setWipeCell,
+    setWipeOrder,
     drawArt,
     getCanvas,
     startAnimation,

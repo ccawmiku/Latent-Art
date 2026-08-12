@@ -20,3 +20,5 @@ export const MAX_TRAIL_POINTS    = 240;
 export const STORAGE_KEY         = 'latent-art-canvas-v3-state';
 export const STRIPE_DENSITY_SCALE = 0.62;
 export const TAU                 = Math.PI * 2;
+/** Background fill of the STRIPES renderer — the wipe's bottom layer */
+export const STRIPE_BACKGROUND    = '#fafafa';

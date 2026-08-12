@@ -283,8 +283,9 @@ export function syncControlUI() {
     if (gOs) gOs.value = String(AppState.growthOvershoot);
     updateText('growth-overshoot-value', `${AppState.growthOvershoot}%`);
 
-    // Wipe cell-size buttons
+    // Wipe cell-size + reveal-order buttons
     _syncButtonGroup({ 'wipe-cell-4': 4, 'wipe-cell-8': 8, 'wipe-cell-16': 16, 'wipe-cell-32': 32, 'wipe-cell-64': 64 }, AppState.wipeCell);
+    _syncButtonGroup({ 'wipe-order-ordered': 'ordered', 'wipe-order-random': 'random' }, AppState.wipeOrder);
 
     _applySettingsVisibility();
 }
