@@ -21,11 +21,16 @@ import { sortPartsForLayerMode } from './sort.js';
  * @param {function(salt:string):string} pickColor
  * @param {{ whitespaceBias, zSpread, globalZBias }} globalConfig
  * @param {function(salt:string):number|null} sampler
+ * @param {number} [cellSize=1]   - when >1, snap stripes to a structural grid:
+ *   every stripe (and the gap a skipped stripe leaves) spans whole cells, so
+ *   the parts double as clean metadata for structural transitions (wipe).
+ *   Default 1 = original pixel-aligned output.
  * @returns {Array<{dir, pos, size, color, z}>}
  */
-export function generateStripes(dir, span, config, pickColor, globalConfig, sampler = null) {
+export function generateStripes(dir, span, config, pickColor, globalConfig, sampler = null, cellSize = 1) {
     const stripes      = [];
     const combinedSkip = clamp(config.skipRate + globalConfig.whitespaceBias, 0, 0.42);
+    const CELL         = Math.max(1, cellSize | 0);
     let current        = 0;
     let stripeIndex    = 0;
 
@@ -35,13 +40,25 @@ export function generateStripes(dir, span, config, pickColor, globalConfig, samp
             0.35 + Math.pow(widthNoise, 1 + config.clusterBias) * config.widthJitter
         );
 
-        const minWidthPx = Math.max(1, Math.round(span * config.minWidth));
-        const rawEnd     = Math.min(span, current + Math.max(sampled, minWidthPx));
-
-        // Pixel-align — prevents sub-pixel seams / anti-aliased gaps
-        const startPx = Math.round(current);
-        let   endPx   = Math.round(rawEnd);
-        if (endPx <= startPx) endPx = startPx + 1;
+        let startPx;
+        let endPx;
+        let nextCurrent;
+        if (CELL > 1) {
+            const minWidthPx = Math.max(CELL, Math.round(span * config.minWidth / CELL) * CELL);
+            const startCell  = Math.ceil(current / CELL);
+            startPx          = startCell * CELL;
+            const cells      = Math.max(1, Math.ceil(Math.max(sampled, minWidthPx) / CELL));
+            endPx            = Math.min(span, startPx + cells * CELL);
+            if (endPx <= startPx) endPx = startPx + CELL;
+            nextCurrent = endPx;
+        } else {
+            const minWidthPx = Math.max(1, Math.round(span * config.minWidth));
+            const rawEnd     = Math.min(span, current + Math.max(sampled, minWidthPx));
+            startPx          = Math.round(current);
+            endPx            = Math.round(rawEnd);
+            if (endPx <= startPx) endPx = startPx + 1;
+            nextCurrent = rawEnd;
+        }
 
         const stripeSize = endPx - startPx;
         if (stripeSize <= 0) break;
@@ -58,7 +75,7 @@ export function generateStripes(dir, span, config, pickColor, globalConfig, samp
             });
         }
 
-        current = rawEnd;
+        current = nextCurrent;
         stripeIndex++;
     }
 
@@ -88,7 +105,7 @@ export const linearRenderer = {
 
     /** @param {CanvasRenderingContext2D} ctx @param {import('./base.js').RenderContext} c */
     render(ctx, c) {
-        const { params, axisMode, layerMode, vSampler, hSampler, vPickColor, hPickColor, paletteColors } = c;
+        const { params, axisMode, layerMode, vSampler, hSampler, vPickColor, hPickColor, paletteColors, cellSize = 1 } = c;
         const w = ctx.canvas.width;
         const h = ctx.canvas.height;
 
@@ -117,8 +134,8 @@ export const linearRenderer = {
         };
         const gConfig = { whitespaceBias: params.whitespaceBias, zSpread: params.zSpread, globalZBias: params.globalZBias };
 
-        const vStripes = generateStripes('vertical',   w, vConfig, vPickColor, gConfig, vSampler);
-        const hStripes = generateStripes('horizontal', h, hConfig, hPickColor, gConfig, hSampler);
+        const vStripes = generateStripes('vertical',   w, vConfig, vPickColor, gConfig, vSampler, cellSize);
+        const hStripes = generateStripes('horizontal', h, hConfig, hPickColor, gConfig, hSampler, cellSize);
 
         let parts = [];
         if (axisMode === 'both' || axisMode === 'x') parts = parts.concat(vStripes);
@@ -133,6 +150,7 @@ export const linearRenderer = {
 
         sortPartsForLayerMode(parts, layerMode);
         drawLinearParts(ctx, w, h, parts, params);
+        return parts; // exposed for structural transitions (e.g. wipe reveals)
     },
 };
 

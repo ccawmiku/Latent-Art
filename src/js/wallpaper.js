@@ -165,7 +165,38 @@ export function setGrowthOvershoot(value) {
     saveState();
 }
 
-// ── Wipe (逐条) journey — reveal target image one vertical band at a time ──
+// ── Wipe (逐条) journey — reveal target image's structural pieces at random ──
+
+/**
+ * Turn the renderer's stripe parts into a set of rectangles that tile the
+ * canvas: B's vertical stripes + the gaps between them (full-height bands,
+ * which also carry the horizontal stripes/background content) + B's
+ * horizontal stripes (full-width bands). Revealing all of them equals B.
+ */
+function buildWipeUnits(parts, w, h) {
+    const units    = [];
+    const vStripes = parts.filter(p => p.dir === 'vertical').slice().sort((a, b) => a.pos - b.pos);
+    const hStripes = parts.filter(p => p.dir === 'horizontal');
+
+    let cursor = 0;
+    for (const s of vStripes) {
+        const p   = Math.max(0, Math.round(s.pos));
+        const sw  = Math.max(1, Math.round(s.size + 1));
+        const end = Math.min(w, p + sw);
+        if (end <= p) continue;
+        if (p > cursor) units.push({ x: cursor, y: 0, w: p - cursor, h });
+        units.push({ x: p, y: 0, w: end - p, h });
+        cursor = Math.max(cursor, end);
+    }
+    if (cursor < w) units.push({ x: cursor, y: 0, w: w - cursor, h });
+
+    for (const s of hStripes) {
+        const p  = Math.max(0, Math.round(s.pos));
+        const sh = Math.max(1, Math.round(s.size + 1));
+        units.push({ x: 0, y: p, w, h: Math.min(h, sh) });
+    }
+    return units;
+}
 
 function generateWipeTarget() {
     const canvas = getCanvas();
@@ -178,35 +209,68 @@ function generateWipeTarget() {
     off.height = canvas.height;
     const temp = new LatentEntity();
     temp.z.set(B);
-    drawArt(off, temp, { updatePanels: false });
+    AppState.lastParts = null; // read B's parts, not a stale render
+    // Only the wipe target snaps to the structural grid; normal renders don't
+    drawArt(off, temp, { updatePanels: false, cellSize: AppState.wipeCell });
+
+    let units = [];
+    if (Array.isArray(AppState.lastParts) && AppState.lastParts.length > 0) {
+        units = buildWipeUnits(AppState.lastParts, canvas.width, canvas.height);
+    } else {
+        // Fallback (non-stripe renderers): uniform vertical bands, random order
+        const bandCount = Math.max(10, Math.min(60, Math.round(canvas.width / 40)));
+        const bw        = Math.ceil(canvas.width / bandCount);
+        for (let i = 0; i < bandCount; i++) {
+            const x = i * bw;
+            units.push({ x, y: 0, w: Math.min(bw, canvas.width - x), h: canvas.height });
+        }
+    }
+
+    // Fisher-Yates — reveal in random xy order instead of a sequential sweep
+    for (let i = units.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [units[i], units[j]] = [units[j], units[i]];
+    }
 
     AppState.wipeTarget    = B;
     AppState.wipeCanvas    = off;
+    AppState.wipeUnits     = units;
     AppState.wipeStepCount = 0;
 }
 
 export function advanceWipe() {
     const canvas = getCanvas();
     if (!canvas || !AppState.currentEntity) return;
-    if (!AppState.wipeTarget || !AppState.wipeCanvas) { generateWipeTarget(); return; }
+    if (!AppState.wipeTarget || !AppState.wipeCanvas || !AppState.wipeUnits) { generateWipeTarget(); return; }
     if (AppState.wipeCanvas.width !== canvas.width || AppState.wipeCanvas.height !== canvas.height) {
         generateWipeTarget();
         return;
     }
 
-    const total       = Math.max(1, AppState.growthSteps);
-    const stripeWidth = Math.max(1, Math.ceil(canvas.width / total));
-    const sx          = AppState.wipeStepCount * stripeWidth;
-    const sw          = Math.min(stripeWidth, canvas.width - sx);
-    if (sw > 0) {
-        canvas.getContext('2d').drawImage(AppState.wipeCanvas, sx, 0, sw, canvas.height, sx, 0, sw, canvas.height);
+    const units = AppState.wipeUnits;
+    if (AppState.wipeStepCount < units.length) {
+        const u = units[AppState.wipeStepCount];
+        canvas.getContext('2d').drawImage(AppState.wipeCanvas, u.x, u.y, u.w, u.h, u.x, u.y, u.w, u.h);
     }
     AppState.wipeStepCount++;
 
-    if (AppState.wipeStepCount >= total) {
+    if (AppState.wipeStepCount >= units.length) {
         AppState.currentEntity.z.set(AppState.wipeTarget);
         generateWipeTarget();
     }
+}
+
+export function setWipeCell(cell) {
+    if (![4, 8, 16, 32, 64].includes(cell)) return;
+    if (cell === AppState.wipeCell) return;
+    AppState.wipeCell = cell;
+    // Restart the journey with the new grid (re-render target B)
+    AppState.wipeTarget    = null;
+    AppState.wipeCanvas    = null;
+    AppState.wipeUnits     = null;
+    AppState.wipeStepCount = 0;
+    syncControlUI();
+    saveState();
 }
 
 // ── Dim (逐维) journey — flip one latent dim to its target value per step ──

@@ -35,14 +35,19 @@ export const AppState = {
     growthDelta:     null, // Float32Array B−A₀ — transient, not persisted
     growthStepCount: 0,
 
-    // ── Wipe (逐条) journey — reveal target image one vertical band at a time
+    // ── Wipe (逐条) journey — reveal target image's structural pieces at random
+    wipeCell:       16,   // structural grid cell px: 4|8|16|32|64 (persisted)
     wipeTarget:     null, // Float32Array B — transient, not persisted
     wipeCanvas:     null, // offscreen render of B — transient, not persisted
+    wipeUnits:      null, // shuffled [{x,y,w,h}] reveal rects tiling the canvas
     wipeStepCount:  0,
 
     // ── Dim (逐维) journey — flip one latent dim per step
     dimTarget:      null, // Float32Array B — transient, not persisted
     dimIndex:       0,
+
+    // Renderer structural parts from the last drawArt (used by wipe target render)
+    lastParts:      null, // transient, not persisted
 
     // ── Render config ─────────────────────────────────────────────────
     axisMode:       'both',   // 'both' | 'x' | 'y'

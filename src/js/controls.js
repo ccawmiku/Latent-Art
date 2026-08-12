@@ -20,7 +20,7 @@ import {
     clearManualPalette, applyLanguage, initPaletteSwatches, rebuildPaletteSwatches,
     updateText, updateMatrixUI,
 } from './ui.js';
-import { setWallpaperDisplayMode, setWallpaperRandomMode, applyWallpaperDisplay, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot } from './wallpaper.js';
+import { setWallpaperDisplayMode, setWallpaperRandomMode, applyWallpaperDisplay, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot, setWipeCell } from './wallpaper.js';
 import { latentProjector, latentMapViewport, projectLatentTo2D }                  from './latentMap.js';
 import { exportMainCanvas, toggleSequenceRecording, exportUniverseBatchZip }      from './export.js';
 
@@ -204,6 +204,11 @@ export function bindControls(actions) {
     document.getElementById('universe-mode-btn')?.addEventListener('click', () => setWallpaperRandomMode('universe'));
     document.getElementById('wipe-mode-btn')?.addEventListener('click',     () => setWallpaperRandomMode('wipe'));
     document.getElementById('dim-mode-btn')?.addEventListener('click',      () => setWallpaperRandomMode('dim'));
+    document.getElementById('wipe-cell-4')?.addEventListener('click',   () => setWipeCell(4));
+    document.getElementById('wipe-cell-8')?.addEventListener('click',   () => setWipeCell(8));
+    document.getElementById('wipe-cell-16')?.addEventListener('click',  () => setWipeCell(16));
+    document.getElementById('wipe-cell-32')?.addEventListener('click',  () => setWipeCell(32));
+    document.getElementById('wipe-cell-64')?.addEventListener('click',  () => setWipeCell(64));
     document.getElementById('fill-mode-btn')?.addEventListener('click',   () => setWallpaperDisplayMode('fill'));
     document.getElementById('square-mode-btn')?.addEventListener('click', () => setWallpaperDisplayMode('square'));
     document.getElementById('outer-color')?.addEventListener('input', event => {
@@ -296,6 +301,7 @@ export function bindControls(actions) {
                 if (properties.frostedblur)   setFrostedBlur(properties.frostedblur.value);
                 if (properties.growthsteps)     setGrowthSteps(properties.growthsteps.value);
                 if (properties.growthovershoot) setGrowthOvershoot(properties.growthovershoot.value);
+                if (properties.wipecell)        setWipeCell([4, 8, 16, 32, 64][properties.wipecell.value]);
                 if (properties.switchseconds) {
                     AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(properties.switchseconds.value) || 60) * 10) / 10, 0.1, 3600);
                     const el = document.getElementById('switch-seconds');

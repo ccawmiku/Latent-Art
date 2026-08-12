@@ -127,19 +127,34 @@
   }
 
   // src/js/renderers/linear.js
-  function generateStripes(dir, span, config, pickColor, globalConfig, sampler = null) {
+  function generateStripes(dir, span, config, pickColor, globalConfig, sampler = null, cellSize = 1) {
     const stripes = [];
     const combinedSkip = clamp(config.skipRate + globalConfig.whitespaceBias, 0, 0.42);
+    const CELL = Math.max(1, cellSize | 0);
     let current = 0;
     let stripeIndex = 0;
     while (current < span) {
       const widthNoise = sampler ? sampler(`width:${stripeIndex}`) : Math.random();
       const sampled = span * config.density * config.widthMean * (0.35 + Math.pow(widthNoise, 1 + config.clusterBias) * config.widthJitter);
-      const minWidthPx = Math.max(1, Math.round(span * config.minWidth));
-      const rawEnd = Math.min(span, current + Math.max(sampled, minWidthPx));
-      const startPx = Math.round(current);
-      let endPx = Math.round(rawEnd);
-      if (endPx <= startPx) endPx = startPx + 1;
+      let startPx;
+      let endPx;
+      let nextCurrent;
+      if (CELL > 1) {
+        const minWidthPx = Math.max(CELL, Math.round(span * config.minWidth / CELL) * CELL);
+        const startCell = Math.ceil(current / CELL);
+        startPx = startCell * CELL;
+        const cells = Math.max(1, Math.ceil(Math.max(sampled, minWidthPx) / CELL));
+        endPx = Math.min(span, startPx + cells * CELL);
+        if (endPx <= startPx) endPx = startPx + CELL;
+        nextCurrent = endPx;
+      } else {
+        const minWidthPx = Math.max(1, Math.round(span * config.minWidth));
+        const rawEnd = Math.min(span, current + Math.max(sampled, minWidthPx));
+        startPx = Math.round(current);
+        endPx = Math.round(rawEnd);
+        if (endPx <= startPx) endPx = startPx + 1;
+        nextCurrent = rawEnd;
+      }
       const stripeSize = endPx - startPx;
       if (stripeSize <= 0) break;
       const keepNoise = sampler ? sampler(`keep:${stripeIndex}`) : Math.random();
@@ -152,7 +167,7 @@
           z: (sampler ? sampler(`z:${stripeIndex}`) : Math.random()) * globalConfig.zSpread + config.zBias + globalConfig.globalZBias
         });
       }
-      current = rawEnd;
+      current = nextCurrent;
       stripeIndex++;
     }
     return stripes;
@@ -182,7 +197,7 @@
     label: "STRIPES",
     /** @param {CanvasRenderingContext2D} ctx @param {import('./base.js').RenderContext} c */
     render(ctx, c) {
-      const { params, axisMode, layerMode, vSampler, hSampler, vPickColor, hPickColor, paletteColors } = c;
+      const { params, axisMode, layerMode, vSampler, hSampler, vPickColor, hPickColor, paletteColors, cellSize = 1 } = c;
       const w = ctx.canvas.width;
       const h = ctx.canvas.height;
       ctx.globalAlpha = 1;
@@ -208,8 +223,8 @@
         zBias: params.hZBias
       };
       const gConfig = { whitespaceBias: params.whitespaceBias, zSpread: params.zSpread, globalZBias: params.globalZBias };
-      const vStripes = generateStripes("vertical", w, vConfig, vPickColor, gConfig, vSampler);
-      const hStripes = generateStripes("horizontal", h, hConfig, hPickColor, gConfig, hSampler);
+      const vStripes = generateStripes("vertical", w, vConfig, vPickColor, gConfig, vSampler, cellSize);
+      const hStripes = generateStripes("horizontal", h, hConfig, hPickColor, gConfig, hSampler, cellSize);
       let parts = [];
       if (axisMode === "both" || axisMode === "x") parts = parts.concat(vStripes);
       if (axisMode === "both" || axisMode === "y") parts = parts.concat(hStripes);
@@ -221,6 +236,7 @@
       }
       sortPartsForLayerMode(parts, layerMode);
       drawLinearParts(ctx, w, h, parts, params);
+      return parts;
     }
   };
   registerRenderer("linear", linearRenderer);
@@ -569,16 +585,23 @@
     growthDelta: null,
     // Float32Array B−A₀ — transient, not persisted
     growthStepCount: 0,
-    // ── Wipe (逐条) journey — reveal target image one vertical band at a time
+    // ── Wipe (逐条) journey — reveal target image's structural pieces at random
+    wipeCell: 16,
+    // structural grid cell px: 4|8|16|32|64 (persisted)
     wipeTarget: null,
     // Float32Array B — transient, not persisted
     wipeCanvas: null,
     // offscreen render of B — transient, not persisted
+    wipeUnits: null,
+    // shuffled [{x,y,w,h}] reveal rects tiling the canvas
     wipeStepCount: 0,
     // ── Dim (逐维) journey — flip one latent dim per step
     dimTarget: null,
     // Float32Array B — transient, not persisted
     dimIndex: 0,
+    // Renderer structural parts from the last drawArt (used by wipe target render)
+    lastParts: null,
+    // transient, not persisted
     // ── Render config ─────────────────────────────────────────────────
     axisMode: "both",
     // 'both' | 'x' | 'y'
@@ -1024,7 +1047,7 @@
     const vPickColor = createColorPicker(paletteColors, params.paletteIndices, params.energies, params.vPaletteBias, params.accentBias, (s) => vSampler(`palette:${s}`));
     const hPickColor = createColorPicker(paletteColors, params.paletteIndices, params.energies, params.hPaletteBias, params.accentBias, (s) => hSampler(`palette:${s}`));
     const renderer = getActiveRenderer();
-    renderer.render(ctx, {
+    AppState.lastParts = renderer.render(ctx, {
       params,
       axisMode: AppState.axisMode,
       layerMode: AppState.layerMode,
@@ -1032,8 +1055,9 @@
       hSampler,
       vPickColor,
       hPickColor,
-      paletteColors
-    });
+      paletteColors,
+      cellSize: options.cellSize || 1
+    }) || null;
     if (updatePanels) {
       const isRadial = getActiveRendererName() === "radial";
       updateText("param-colors", params.paletteIndices.length);
@@ -1123,6 +1147,7 @@
         wallpaperOuterColor: AppState.wallpaperOuterColor,
         growthSteps: AppState.growthSteps,
         growthOvershoot: AppState.growthOvershoot,
+        wipeCell: AppState.wipeCell,
         entity: serializeEntity(AppState.currentEntity),
         decoder: serializeDecoder(AppState.universeDecoder)
       };
@@ -1156,12 +1181,15 @@
       AppState.wallpaperOuterColor = /^#[0-9a-f]{6}$/i.test(s.wallpaperOuterColor || "") ? s.wallpaperOuterColor : "#ffffff";
       AppState.growthSteps = Number.isFinite(s.growthSteps) ? clamp(Math.floor(s.growthSteps), 5, 120) : 30;
       AppState.growthOvershoot = Number.isFinite(s.growthOvershoot) ? clamp(Math.round(s.growthOvershoot), 0, 100) : 65;
+      AppState.wipeCell = [4, 8, 16, 32, 64].includes(s.wipeCell) ? s.wipeCell : 16;
       AppState.growthStart = null;
       AppState.growthDelta = null;
       AppState.growthStepCount = 0;
       AppState.wipeTarget = null;
       AppState.wipeCanvas = null;
+      AppState.wipeUnits = null;
       AppState.wipeStepCount = 0;
+      AppState.lastParts = null;
       AppState.dimTarget = null;
       AppState.dimIndex = 0;
       AppState.manualPaletteIndices = Array.isArray(s.manualPaletteIndices) ? s.manualPaletteIndices.map((x) => Math.floor(x)).filter((x) => x >= 0 && x < 32) : [];
@@ -1455,6 +1483,7 @@
     const gOs = document.getElementById("growth-overshoot");
     if (gOs) gOs.value = String(AppState.growthOvershoot);
     updateText2("growth-overshoot-value", `${AppState.growthOvershoot}%`);
+    _syncButtonGroup({ "wipe-cell-4": 4, "wipe-cell-8": 8, "wipe-cell-16": 16, "wipe-cell-32": 32, "wipe-cell-64": 64 }, AppState.wipeCell);
     _applySettingsVisibility();
   }
   function _applySettingsVisibility() {
@@ -1462,9 +1491,10 @@
     document.getElementById("frosted-blur-row")?.classList.toggle("hidden", !isFrosted);
     document.getElementById("display-controls")?.classList.toggle("hidden", isFrosted);
     const rm = AppState.wallpaperRandomMode;
-    const showGrowth = rm === "growth" || rm === "wipe";
+    const showGrowth = rm === "growth";
     document.getElementById("growth-controls")?.classList.toggle("hidden", !showGrowth);
     document.getElementById("growth-overshoot-row")?.classList.toggle("hidden", rm !== "growth");
+    document.getElementById("wipe-controls")?.classList.toggle("hidden", rm !== "wipe");
   }
   function _syncButtonGroup(idToValueMap, activeValue) {
     for (const [id, val] of Object.entries(idToValueMap)) {
@@ -1600,6 +1630,28 @@
     syncControlUI();
     saveState();
   }
+  function buildWipeUnits(parts, w, h) {
+    const units = [];
+    const vStripes = parts.filter((p) => p.dir === "vertical").slice().sort((a, b) => a.pos - b.pos);
+    const hStripes = parts.filter((p) => p.dir === "horizontal");
+    let cursor = 0;
+    for (const s of vStripes) {
+      const p = Math.max(0, Math.round(s.pos));
+      const sw = Math.max(1, Math.round(s.size + 1));
+      const end = Math.min(w, p + sw);
+      if (end <= p) continue;
+      if (p > cursor) units.push({ x: cursor, y: 0, w: p - cursor, h });
+      units.push({ x: p, y: 0, w: end - p, h });
+      cursor = Math.max(cursor, end);
+    }
+    if (cursor < w) units.push({ x: cursor, y: 0, w: w - cursor, h });
+    for (const s of hStripes) {
+      const p = Math.max(0, Math.round(s.pos));
+      const sh = Math.max(1, Math.round(s.size + 1));
+      units.push({ x: 0, y: p, w, h: Math.min(h, sh) });
+    }
+    return units;
+  }
   function generateWipeTarget() {
     const canvas = getCanvas();
     if (!canvas) return;
@@ -1610,15 +1662,32 @@
     off.height = canvas.height;
     const temp = new LatentEntity();
     temp.z.set(B);
-    drawArt(off, temp, { updatePanels: false });
+    AppState.lastParts = null;
+    drawArt(off, temp, { updatePanels: false, cellSize: AppState.wipeCell });
+    let units = [];
+    if (Array.isArray(AppState.lastParts) && AppState.lastParts.length > 0) {
+      units = buildWipeUnits(AppState.lastParts, canvas.width, canvas.height);
+    } else {
+      const bandCount = Math.max(10, Math.min(60, Math.round(canvas.width / 40)));
+      const bw = Math.ceil(canvas.width / bandCount);
+      for (let i = 0; i < bandCount; i++) {
+        const x = i * bw;
+        units.push({ x, y: 0, w: Math.min(bw, canvas.width - x), h: canvas.height });
+      }
+    }
+    for (let i = units.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [units[i], units[j]] = [units[j], units[i]];
+    }
     AppState.wipeTarget = B;
     AppState.wipeCanvas = off;
+    AppState.wipeUnits = units;
     AppState.wipeStepCount = 0;
   }
   function advanceWipe() {
     const canvas = getCanvas();
     if (!canvas || !AppState.currentEntity) return;
-    if (!AppState.wipeTarget || !AppState.wipeCanvas) {
+    if (!AppState.wipeTarget || !AppState.wipeCanvas || !AppState.wipeUnits) {
       generateWipeTarget();
       return;
     }
@@ -1626,18 +1695,27 @@
       generateWipeTarget();
       return;
     }
-    const total = Math.max(1, AppState.growthSteps);
-    const stripeWidth = Math.max(1, Math.ceil(canvas.width / total));
-    const sx = AppState.wipeStepCount * stripeWidth;
-    const sw = Math.min(stripeWidth, canvas.width - sx);
-    if (sw > 0) {
-      canvas.getContext("2d").drawImage(AppState.wipeCanvas, sx, 0, sw, canvas.height, sx, 0, sw, canvas.height);
+    const units = AppState.wipeUnits;
+    if (AppState.wipeStepCount < units.length) {
+      const u = units[AppState.wipeStepCount];
+      canvas.getContext("2d").drawImage(AppState.wipeCanvas, u.x, u.y, u.w, u.h, u.x, u.y, u.w, u.h);
     }
     AppState.wipeStepCount++;
-    if (AppState.wipeStepCount >= total) {
+    if (AppState.wipeStepCount >= units.length) {
       AppState.currentEntity.z.set(AppState.wipeTarget);
       generateWipeTarget();
     }
+  }
+  function setWipeCell(cell) {
+    if (![4, 8, 16, 32, 64].includes(cell)) return;
+    if (cell === AppState.wipeCell) return;
+    AppState.wipeCell = cell;
+    AppState.wipeTarget = null;
+    AppState.wipeCanvas = null;
+    AppState.wipeUnits = null;
+    AppState.wipeStepCount = 0;
+    syncControlUI();
+    saveState();
   }
   function generateDimTarget() {
     const B = new Float32Array(LATENT_DIM);
@@ -2137,6 +2215,11 @@
     document.getElementById("universe-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("universe"));
     document.getElementById("wipe-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("wipe"));
     document.getElementById("dim-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("dim"));
+    document.getElementById("wipe-cell-4")?.addEventListener("click", () => setWipeCell(4));
+    document.getElementById("wipe-cell-8")?.addEventListener("click", () => setWipeCell(8));
+    document.getElementById("wipe-cell-16")?.addEventListener("click", () => setWipeCell(16));
+    document.getElementById("wipe-cell-32")?.addEventListener("click", () => setWipeCell(32));
+    document.getElementById("wipe-cell-64")?.addEventListener("click", () => setWipeCell(64));
     document.getElementById("fill-mode-btn")?.addEventListener("click", () => setWallpaperDisplayMode("fill"));
     document.getElementById("square-mode-btn")?.addEventListener("click", () => setWallpaperDisplayMode("square"));
     document.getElementById("outer-color")?.addEventListener("input", (event) => {
@@ -2223,6 +2306,7 @@
           if (properties.frostedblur) setFrostedBlur(properties.frostedblur.value);
           if (properties.growthsteps) setGrowthSteps(properties.growthsteps.value);
           if (properties.growthovershoot) setGrowthOvershoot(properties.growthovershoot.value);
+          if (properties.wipecell) setWipeCell([4, 8, 16, 32, 64][properties.wipecell.value]);
           if (properties.switchseconds) {
             AppState.wallpaperSwitchSeconds = clamp(Math.round((Number(properties.switchseconds.value) || 60) * 10) / 10, 0.1, 3600);
             const el = document.getElementById("switch-seconds");
@@ -2356,9 +2440,12 @@
     AppState.growthStart = null;
     AppState.growthDelta = null;
     AppState.growthStepCount = 0;
+    AppState.wipeCell = 16;
     AppState.wipeTarget = null;
     AppState.wipeCanvas = null;
+    AppState.wipeUnits = null;
     AppState.wipeStepCount = 0;
+    AppState.lastParts = null;
     AppState.dimTarget = null;
     AppState.dimIndex = 0;
     AppState.manualPaletteIndices = [];
@@ -2448,7 +2535,9 @@
     AppState.growthStepCount = 0;
     AppState.wipeTarget = null;
     AppState.wipeCanvas = null;
+    AppState.wipeUnits = null;
     AppState.wipeStepCount = 0;
+    AppState.lastParts = null;
     AppState.dimTarget = null;
     AppState.dimIndex = 0;
     AppState.layerMode = "auto";
@@ -2469,7 +2558,9 @@
     AppState.growthDelta = null;
     AppState.wipeTarget = null;
     AppState.wipeCanvas = null;
+    AppState.wipeUnits = null;
     AppState.wipeStepCount = 0;
+    AppState.lastParts = null;
     AppState.dimTarget = null;
     AppState.dimIndex = 0;
     drawArt(getCanvas(), AppState.currentEntity);
@@ -2570,6 +2661,7 @@
     setFrostedBlur,
     setGrowthSteps,
     setGrowthOvershoot,
+    setWipeCell,
     drawArt,
     getCanvas,
     startAnimation,

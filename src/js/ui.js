@@ -283,6 +283,9 @@ export function syncControlUI() {
     if (gOs) gOs.value = String(AppState.growthOvershoot);
     updateText('growth-overshoot-value', `${AppState.growthOvershoot}%`);
 
+    // Wipe cell-size buttons
+    _syncButtonGroup({ 'wipe-cell-4': 4, 'wipe-cell-8': 8, 'wipe-cell-16': 16, 'wipe-cell-32': 32, 'wipe-cell-64': 64 }, AppState.wipeCell);
+
     _applySettingsVisibility();
 }
 
@@ -293,9 +296,10 @@ function _applySettingsVisibility() {
     document.getElementById('display-controls')?.classList.toggle('hidden', isFrosted);
 
     const rm = AppState.wallpaperRandomMode;
-    const showGrowth = rm === 'growth' || rm === 'wipe';
+    const showGrowth = rm === 'growth';
     document.getElementById('growth-controls')?.classList.toggle('hidden', !showGrowth);
     document.getElementById('growth-overshoot-row')?.classList.toggle('hidden', rm !== 'growth');
+    document.getElementById('wipe-controls')?.classList.toggle('hidden', rm !== 'wipe');
 }
 
 function _syncButtonGroup(idToValueMap, activeValue) {

@@ -28,7 +28,7 @@ import {
     setPausedVisual, syncControlUI,
     updateText, applyLanguage, initMatrixUI, updateMatrixUI, clearManualPalette,
 } from './ui.js';
-import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot } from './wallpaper.js';
+import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot, setWipeCell } from './wallpaper.js';
 import { setColorLimit, setRandomness, setAxisMode, setGeometryMode, setLayerMode, setActivationMode, setPalette, bindControls } from './controls.js';
 import { captureSequenceFrame, toggleSequenceRecording, exportUniverseBatchZip, exportMainCanvas, updateRecordButton } from './export.js';
 import { generateStripes }  from './renderers/linear.js';
@@ -59,9 +59,12 @@ function freshUniverse() {
     AppState.growthStart           = null;
     AppState.growthDelta           = null;
     AppState.growthStepCount       = 0;
+    AppState.wipeCell              = 16;
     AppState.wipeTarget            = null;
     AppState.wipeCanvas            = null;
+    AppState.wipeUnits             = null;
     AppState.wipeStepCount         = 0;
+    AppState.lastParts             = null;
     AppState.dimTarget             = null;
     AppState.dimIndex              = 0;
     AppState.manualPaletteIndices  = [];
@@ -177,7 +180,9 @@ function hardReset() {
     AppState.growthStepCount       = 0;
     AppState.wipeTarget            = null;
     AppState.wipeCanvas            = null;
+    AppState.wipeUnits             = null;
     AppState.wipeStepCount         = 0;
+    AppState.lastParts             = null;
     AppState.dimTarget             = null;
     AppState.dimIndex              = 0;
     AppState.layerMode             = 'auto';
@@ -201,7 +206,9 @@ function jumpLatentRegion() {
     AppState.growthDelta          = null;
     AppState.wipeTarget           = null;
     AppState.wipeCanvas           = null;
+    AppState.wipeUnits            = null;
     AppState.wipeStepCount        = 0;
+    AppState.lastParts            = null;
     AppState.dimTarget            = null;
     AppState.dimIndex             = 0;
     drawArt(getCanvas(), AppState.currentEntity);
@@ -321,6 +328,7 @@ Object.assign(window, {
     setFrostedBlur,
     setGrowthSteps,
     setGrowthOvershoot,
+    setWipeCell,
     drawArt,
     getCanvas,
     startAnimation,
