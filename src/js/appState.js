@@ -39,17 +39,18 @@ export const AppState = {
     wipeCell:       16,   // structural grid cell px: 4|8|16|32|64 (persisted)
     wipeOrder:      'ordered', // 'ordered' = bottom→top draw order | 'random' = random xy
     wipeTarget:     null, // Float32Array B — transient, not persisted
-    wipeCanvas:     null, // offscreen render of B — transient, not persisted
-    wipeUnits:      null, // shuffled [{x,y,w,h}] reveal rects tiling the canvas
+    wipeParts:      null, // B's structural parts (draw order) — transient
+    wipeDrawFrame:  null, // renderer's full-frame painter (bg + parts) — transient
+    wipeSequence:   null, // reveal order (array of part indices) — transient
     wipeStepCount:  0,
+    wipeSize:       null, // {w,h} the target was built for (resize check)
 
     // ── Dim (逐维) journey — flip one latent dim per step
     dimTarget:      null, // Float32Array B — transient, not persisted
     dimIndex:       0,
 
-    // Renderer structural parts from the last drawArt (used by wipe target render)
-    lastParts:      null, // transient, not persisted
-    lastEdgeExpand: 0,    // matching draw dilation for exact stripe fills
+    // Renderer structural output from the last drawArt (used by the wipe target)
+    lastRender:     null, // { parts, drawFrame } — transient
 
     // ── Render config ─────────────────────────────────────────────────
     axisMode:       'both',   // 'both' | 'x' | 'y'

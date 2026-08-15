@@ -25,9 +25,11 @@ export const pixelGridRenderer = {
         const h = ctx.canvas.height;
 
         // ── Grid dimensions ───────────────────────────────────────────
-        // ~20 base cells, scaled by density so the network influences grid size
-        const cols  = Math.max(4, Math.round(w * params.vDensity * 22) + 2);
-        const rows  = Math.max(4, Math.round(h * params.hDensity * 22) + 2);
+        // ~40-90 cells per axis at typical densities, matching the stripe
+        // renderer. (The old `* 22` factor produced ~2000 columns of
+        // sub-pixel cells → rendered as fine noise and very slow.)
+        const cols  = Math.max(6, Math.round(w * params.vDensity * 0.6) + 2);
+        const rows  = Math.max(6, Math.round(h * params.hDensity * 0.6) + 2);
         const cellW = w / cols;
         const cellH = h / rows;
 
@@ -45,7 +47,9 @@ export const pixelGridRenderer = {
         const gap = params.edgeExpand > 0 ? 0 : 1;
 
         // ── Raster ───────────────────────────────────────────────────
+        const rowParts = [];
         for (let row = 0; row < rows; row++) {
+            const cells = [];
             for (let col = 0; col < cols; col++) {
                 const salt = `${col}:${row}`;
 
@@ -73,13 +77,30 @@ export const pixelGridRenderer = {
                 // Pixel-align cell rect to avoid sub-pixel rendering artefacts
                 const px = Math.round(col * cellW);
                 const py = Math.round(row * cellH);
-                const cw = Math.round((col + 1) * cellW) - px;
-                const ch = Math.round((row + 1) * cellH) - py;
+                const cw = Math.max(1, Math.round((col + 1) * cellW) - px - gap);
+                const ch = Math.max(1, Math.round((row + 1) * cellH) - py - gap);
 
                 ctx.fillStyle = color;
-                ctx.fillRect(px, py, Math.max(1, cw - gap), Math.max(1, ch - gap));
+                ctx.fillRect(px, py, cw, ch);
+                cells.push({ x: px, y: py, w: cw, h: ch, color });
             }
+            if (cells.length) rowParts.push({ dir: 'row', cells });
         }
+
+        // Structural parts (one per grid row) + a full-frame painter — for the wipe
+        return {
+            parts: rowParts,
+            drawFrame: (dctx, dw, dh, dp) => {
+                dctx.fillStyle = '#fafafa';
+                dctx.fillRect(0, 0, dw, dh);
+                for (const r of dp) {
+                    for (const cell of r.cells) {
+                        dctx.fillStyle = cell.color;
+                        dctx.fillRect(cell.x, cell.y, cell.w, cell.h);
+                    }
+                }
+            },
+        };
     },
 };
 

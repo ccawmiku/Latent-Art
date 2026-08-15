@@ -139,10 +139,12 @@ export function restoreSavedState() {
         AppState.growthDelta     = null;
         AppState.growthStepCount = 0;
         AppState.wipeTarget      = null;   // transient — regenerated on first wipe step
-        AppState.wipeCanvas      = null;
-        AppState.wipeUnits       = null;
+        AppState.wipeParts       = null;
+        AppState.wipeDrawFrame   = null;
+        AppState.wipeSequence    = null;
         AppState.wipeStepCount   = 0;
-        AppState.lastParts       = null;
+        AppState.wipeSize        = null;
+        AppState.lastRender      = null;
         AppState.dimTarget       = null;   // transient — regenerated on first dim step
         AppState.dimIndex        = 0;
         AppState.manualPaletteIndices = Array.isArray(s.manualPaletteIndices)

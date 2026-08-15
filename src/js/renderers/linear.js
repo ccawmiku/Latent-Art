@@ -150,7 +150,16 @@ export const linearRenderer = {
 
         sortPartsForLayerMode(parts, layerMode);
         drawLinearParts(ctx, w, h, parts, params);
-        return parts; // exposed for structural transitions (e.g. wipe reveals)
+
+        // Structural parts (draw order) + a full-frame painter — for the wipe
+        return {
+            parts,
+            drawFrame: (dctx, dw, dh, dp) => {
+                dctx.fillStyle = STRIPE_BACKGROUND;
+                dctx.fillRect(0, 0, dw, dh);
+                drawLinearParts(dctx, dw, dh, dp, params);
+            },
+        };
     },
 };
 

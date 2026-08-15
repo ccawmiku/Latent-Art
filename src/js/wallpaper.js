@@ -10,7 +10,7 @@ import { saveState }          from './state.js';
 import { DecoderNetwork }     from './decoder.js';
 import { LatentEntity }       from './entity.js';
 import { clamp, createUniverseSeed, randNormal } from './math.js';
-import { LATENT_DIM, STRIPE_BACKGROUND }        from './constants.js';
+import { LATENT_DIM }                            from './constants.js';
 import { latentTrail }        from './latentMap.js';
 import { updateText, syncControlUI } from './ui.js';
 
@@ -94,8 +94,11 @@ export function setWallpaperRandomMode(mode) {
     AppState.growthDelta     = null;
     AppState.growthStepCount = 0;
     AppState.wipeTarget      = null;
-    AppState.wipeCanvas      = null;
+    AppState.wipeParts       = null;
+    AppState.wipeDrawFrame   = null;
+    AppState.wipeSequence    = null;
     AppState.wipeStepCount   = 0;
+    AppState.wipeSize        = null;
     AppState.dimTarget       = null;
     AppState.dimIndex        = 0;
     document.getElementById('growth-mode-btn')?.classList.toggle('active',   mode === 'growth');
@@ -167,75 +170,25 @@ export function setGrowthOvershoot(value) {
 
 // ── Wipe (逐条) journey — reveal target image's structural pieces ──────────
 
-/**
- * Reveal units for the ORDERED mode (bottom→top draw order): the background
- * gaps first, then B's stripes in their recorded draw order (the parts array
- * is already sorted so later = on top). Each is a solid color fill, so top
- * stripes visibly cover bottom ones — matching the cover relations.
- */
-function buildOrderedUnits(parts, w, h, edgeExpand) {
-    const dilate   = n => Math.max(1, Math.round(n + (edgeExpand || 0)));
-    const units    = [];
-    const vStripes = parts.filter(p => p.dir === 'vertical').slice().sort((a, b) => a.pos - b.pos);
-
-    // Background gaps — the bottom-most layer
-    let cursor = 0;
-    for (const s of vStripes) {
-        const p   = Math.max(0, Math.round(s.pos));
-        const end = Math.min(w, p + dilate(s.size));
-        if (end <= p) continue;
-        if (p > cursor) units.push({ kind: 'fill', color: STRIPE_BACKGROUND, x: cursor, y: 0, w: p - cursor, h });
-        cursor = Math.max(cursor, end);
-    }
-    if (cursor < w) units.push({ kind: 'fill', color: STRIPE_BACKGROUND, x: cursor, y: 0, w: w - cursor, h });
-
-    // Stripes in draw order (bottom to top)
-    for (const s of parts) {
-        if (s.dir === 'vertical') {
-            units.push({ kind: 'fill', color: s.color, x: Math.round(s.pos), y: 0, w: dilate(s.size), h });
-        } else {
-            units.push({ kind: 'fill', color: s.color, x: 0, y: Math.round(s.pos), w, h: dilate(s.size) });
-        }
-    }
-    return units;
-}
-
-/**
- * Reveal units for the RANDOM mode: B's vertical stripes + the gaps between
- * them + B's horizontal stripes, shuffled. Each is a region copied from B's
- * finished render (drawImage), so any crossing content is already correct.
- */
-function buildRandomUnits(parts, w, h, edgeExpand) {
-    const dilate   = n => Math.max(1, Math.round(n + (edgeExpand || 0)));
-    const units    = [];
-    const vStripes = parts.filter(p => p.dir === 'vertical').slice().sort((a, b) => a.pos - b.pos);
-    const hStripes = parts.filter(p => p.dir === 'horizontal');
-
-    let cursor = 0;
-    for (const s of vStripes) {
-        const p   = Math.max(0, Math.round(s.pos));
-        const sw  = dilate(s.size);
-        const end = Math.min(w, p + sw);
-        if (end <= p) continue;
-        if (p > cursor) units.push({ kind: 'region', x: cursor, y: 0, w: p - cursor, h });
-        units.push({ kind: 'region', x: p, y: 0, w: end - p, h });
-        cursor = Math.max(cursor, end);
-    }
-    if (cursor < w) units.push({ kind: 'region', x: cursor, y: 0, w: w - cursor, h });
-
-    for (const s of hStripes) {
-        const p  = Math.max(0, Math.round(s.pos));
-        const sh = dilate(s.size);
-        units.push({ kind: 'region', x: 0, y: p, w, h: Math.min(h, sh) });
-    }
-    return units;
-}
-
 function shuffleUnits(units) {
     for (let i = units.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [units[i], units[j]] = [units[j], units[i]];
     }
+}
+
+/**
+ * Reveal sequence: groups of part indices, ≤ maxSteps groups. Ordered =
+ * draw order; random = shuffled groups. Grouping keeps dense renderers
+ * (pixel grids with thousands of rows) from producing absurdly long journeys.
+ */
+export function buildWipeSequence(partCount, order, maxSteps = 120) {
+    const indices  = Array.from({ length: partCount }, (_, i) => i);
+    const groupSize = Math.max(1, Math.ceil(partCount / maxSteps));
+    const groups   = [];
+    for (let i = 0; i < partCount; i += groupSize) groups.push(indices.slice(i, i + groupSize));
+    if (order === 'random') shuffleUnits(groups);
+    return groups;
 }
 
 function generateWipeTarget() {
@@ -244,63 +197,68 @@ function generateWipeTarget() {
     const B = new Float32Array(LATENT_DIM);
     for (let i = 0; i < LATENT_DIM; i++) B[i] = randNormal() * 1.2;
 
+    // Render B to a throwaway offscreen purely to obtain its structural parts;
+    // the reveal redraws bg + parts, so the offscreen pixels aren't kept.
     const off = document.createElement('canvas');
     off.width  = canvas.width;
     off.height = canvas.height;
     const temp = new LatentEntity();
     temp.z.set(B);
-    AppState.lastParts      = null; // read B's parts, not a stale render
-    AppState.lastEdgeExpand = 0;
+    AppState.lastRender = null; // read B's render info, not a stale render
     // Only the wipe target snaps to the structural grid; normal renders don't
     drawArt(off, temp, { updatePanels: false, cellSize: AppState.wipeCell });
 
-    const parts = (Array.isArray(AppState.lastParts) && AppState.lastParts.length > 0) ? AppState.lastParts : null;
-    let units = [];
-    if (parts && AppState.wipeOrder === 'ordered') {
-        units = buildOrderedUnits(parts, canvas.width, canvas.height, AppState.lastEdgeExpand);
-    } else if (parts) {
-        units = buildRandomUnits(parts, canvas.width, canvas.height, AppState.lastEdgeExpand);
-        shuffleUnits(units);
+    const render = AppState.lastRender;
+    const hasStructure = render && Array.isArray(render.parts) && render.parts.length > 0 && typeof render.drawFrame === 'function';
+
+    let sequence;
+    let drawFrame;
+    let parts;
+    if (hasStructure) {
+        sequence  = buildWipeSequence(render.parts.length, AppState.wipeOrder);
+        parts     = render.parts;
+        drawFrame = render.drawFrame;
     } else {
-        // Fallback (non-stripe renderers): uniform vertical bands, random order
-        const bandCount = Math.max(10, Math.min(60, Math.round(canvas.width / 40)));
-        const bw        = Math.ceil(canvas.width / bandCount);
-        for (let i = 0; i < bandCount; i++) {
-            const x = i * bw;
-            units.push({ kind: 'region', x, y: 0, w: Math.min(bw, canvas.width - x), h: canvas.height });
-        }
-        shuffleUnits(units);
+        // Safety net (renderer without parts): one full-canvas background step
+        sequence  = [0];
+        parts     = [];
+        drawFrame = (dctx, dw, dh) => { dctx.fillStyle = '#fafafa'; dctx.fillRect(0, 0, dw, dh); };
     }
 
-    AppState.wipeTarget    = B;
-    AppState.wipeCanvas    = off;
-    AppState.wipeUnits     = units;
-    AppState.wipeStepCount = 0;
+    AppState.wipeTarget     = B;
+    AppState.wipeParts      = parts;
+    AppState.wipeDrawFrame  = drawFrame;
+    AppState.wipeSequence   = sequence;
+    AppState.wipeStepCount  = 0;
+    AppState.wipeSize       = { w: canvas.width, h: canvas.height };
 }
 
 export function advanceWipe() {
     const canvas = getCanvas();
     if (!canvas || !AppState.currentEntity) return;
-    if (!AppState.wipeTarget || !AppState.wipeCanvas || !AppState.wipeUnits) { generateWipeTarget(); return; }
-    if (AppState.wipeCanvas.width !== canvas.width || AppState.wipeCanvas.height !== canvas.height) {
+    if (!AppState.wipeParts || !AppState.wipeSequence || !AppState.wipeDrawFrame) { generateWipeTarget(); return; }
+    if (!AppState.wipeSize || AppState.wipeSize.w !== canvas.width || AppState.wipeSize.h !== canvas.height) {
         generateWipeTarget();
         return;
     }
 
-    const units = AppState.wipeUnits;
-    if (AppState.wipeStepCount < units.length) {
-        const u  = units[AppState.wipeStepCount];
-        const ctx = canvas.getContext('2d');
-        if (u.kind === 'fill') {
-            ctx.fillStyle = u.color;
-            ctx.fillRect(u.x, u.y, u.w, u.h);
-        } else {
-            ctx.drawImage(AppState.wipeCanvas, u.x, u.y, u.w, u.h, u.x, u.y, u.w, u.h);
-        }
-    }
+    const ctx = canvas.getContext('2d');
     AppState.wipeStepCount++;
 
-    if (AppState.wipeStepCount >= units.length) {
+    // Redraw the frame (background + revealed parts) via the renderer's own
+    // painter, always passing the revealed parts in draw order so cover
+    // relations stay correct whichever order they appeared in.
+    const revealed = new Set();
+    for (const group of AppState.wipeSequence.slice(0, AppState.wipeStepCount)) {
+        for (const idx of group) revealed.add(idx);
+    }
+    const toDraw   = [];
+    for (let i = 0; i < AppState.wipeParts.length; i++) {
+        if (revealed.has(i)) toDraw.push(AppState.wipeParts[i]);
+    }
+    AppState.wipeDrawFrame(ctx, canvas.width, canvas.height, toDraw);
+
+    if (AppState.wipeStepCount >= AppState.wipeSequence.length) {
         AppState.currentEntity.z.set(AppState.wipeTarget);
         generateWipeTarget();
     }
@@ -310,11 +268,13 @@ export function setWipeOrder(order) {
     if (!['ordered', 'random'].includes(order)) return;
     if (order === AppState.wipeOrder) return;
     AppState.wipeOrder = order;
-    // Restart the journey with the new reveal order (re-render target B)
-    AppState.wipeTarget    = null;
-    AppState.wipeCanvas    = null;
-    AppState.wipeUnits     = null;
-    AppState.wipeStepCount = 0;
+    // Restart the journey (re-render target B)
+    AppState.wipeTarget     = null;
+    AppState.wipeParts      = null;
+    AppState.wipeDrawFrame  = null;
+    AppState.wipeSequence   = null;
+    AppState.wipeStepCount  = 0;
+    AppState.wipeSize       = null;
     syncControlUI();
     saveState();
 }
@@ -324,17 +284,19 @@ export function setWipeCell(cell) {
     if (cell === AppState.wipeCell) return;
     AppState.wipeCell = cell;
     // Restart the journey with the new grid (re-render target B)
-    AppState.wipeTarget    = null;
-    AppState.wipeCanvas    = null;
-    AppState.wipeUnits     = null;
-    AppState.wipeStepCount = 0;
+    AppState.wipeTarget     = null;
+    AppState.wipeParts      = null;
+    AppState.wipeDrawFrame  = null;
+    AppState.wipeSequence   = null;
+    AppState.wipeStepCount  = 0;
+    AppState.wipeSize       = null;
     syncControlUI();
     saveState();
 }
 
 // ── Dim (逐维) journey — flip one latent dim to its target value per step ──
 
-function generateDimTarget() {
+export function generateDimTarget() {
     const B = new Float32Array(LATENT_DIM);
     for (let i = 0; i < LATENT_DIM; i++) B[i] = randNormal() * 1.2;
     AppState.dimTarget = B;

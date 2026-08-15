@@ -56,6 +56,12 @@ export function generateRadialSegments(dir, span, config, pickColor, globalConfi
 
 // ── Drawing ───────────────────────────────────────────────────────────────
 
+/**
+ * Fill the background inside the circle and draw the given parts. The caller
+ * clears the whole canvas first (so outside the circle stays transparent and
+ * the wallpaper's own background shows through — the "circle only" look).
+ * Kept exported so the wipe can reveal parts with the same code.
+ */
 export function drawRadialParts(ctx, w, h, parts, backgroundColor) {
     const cx            = w / 2;
     const cy            = h / 2;
@@ -145,7 +151,22 @@ export const radialRenderer = {
             : '#fafafa';
 
         sortPartsForLayerMode(parts, layerMode);
+
+        // Clear the WHOLE canvas first so outside the circle stays transparent
+        // (the wallpaper's own background shows there, not a renderer colour).
+        ctx.globalAlpha = 1;
+        ctx.clearRect(0, 0, w, h);
         drawRadialParts(ctx, w, h, parts, bg);
+
+        // Structural parts (draw order) + a full-frame painter — for the wipe
+        return {
+            parts,
+            drawFrame: (dctx, dw, dh, dp) => {
+                dctx.globalAlpha = 1;
+                dctx.clearRect(0, 0, dw, dh);
+                drawRadialParts(dctx, dw, dh, dp, bg);
+            },
+        };
     },
 };
 
