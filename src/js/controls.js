@@ -16,13 +16,14 @@ import { setActiveRendererName, listRenderers, getRenderer } from './renderers/r
 import { setActivePaletteName, listPalettes, getPalette }    from './palettes/registry.js';
 import {
     syncControlUI, updatePaletteUI, setPausedVisual,
-    setStudioView, toggleLanguage, enableManualPalette,
+    toggleLanguage, enableManualPalette,
     clearManualPalette, applyLanguage, initPaletteSwatches, rebuildPaletteSwatches,
+    initOuterColorSwatches, rebuildOuterColorSwatches, updateOuterColorUI,
     updateText, updateMatrixUI,
 } from './ui.js';
 import { setWallpaperDisplayMode, setWallpaperRandomMode, applyWallpaperDisplay, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot, setWipeCell, setWipeOrder } from './wallpaper.js';
 import { latentProjector, latentMapViewport, projectLatentTo2D }                  from './latentMap.js';
-import { exportMainCanvas, toggleSequenceRecording, exportUniverseBatchZip }      from './export.js';
+import { exportMainCanvas, toggleSequenceRecording, exportCanvasBatchZip }      from './export.js';
 
 // ── Config setters (also exposed as window globals) ───────────────────────
 
@@ -77,6 +78,7 @@ export function setPalette(name) {
     if (!listPalettes().includes(name)) return;
     setActivePaletteName(name);
     rebuildPaletteSwatches(handleSwatchClick);
+    rebuildOuterColorSwatches(handleOuterColorClick);
     syncControlUI();
     if (AppState.currentEntity) drawArt(getCanvas(), AppState.currentEntity);
     saveState();
@@ -90,6 +92,15 @@ export function handleSwatchClick(idx) {
     AppState.manualPaletteIndices = [...set].sort((a, b) => a - b);
     updatePaletteUI();
     if (AppState.currentEntity) drawArt(getCanvas(), AppState.currentEntity);
+    saveState();
+}
+
+// ── Outer-color (四周颜色) swatch handler ─────────────────────────────────
+
+export function handleOuterColorClick(color) {
+    AppState.wallpaperOuterColor = color;
+    applyWallpaperDisplay(false);
+    updateOuterColorUI();
     saveState();
 }
 
@@ -178,10 +189,14 @@ export function bindControls(actions) {
     // ── Palette swatches ──────────────────────────────────────────────
     initPaletteSwatches(handleSwatchClick);
 
-    // ── Settings panel ────────────────────────────────────────────────
+    // ── Settings bar toggle ───────────────────────────────────────────
     const settingsBtn   = document.getElementById('settings-btn');
-    const settingsPanel = document.getElementById('settings-panel');
-    if (settingsBtn && settingsPanel) settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('open'));
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            document.body.classList.toggle('settings-view');
+            setPausedVisual(AppState.isPaused);
+        });
+    }
 
     const nextBtn = document.getElementById('next-btn');
     if (nextBtn) {
@@ -190,18 +205,12 @@ export function bindControls(actions) {
         nextBtn.addEventListener('click', nextWallpaper);
     }
 
-    const studioBtn = document.getElementById('studio-btn');
-    if (studioBtn) studioBtn.addEventListener('click', () => setStudioView(!document.body.classList.contains('studio-view')));
-
     const resetBtn = document.getElementById('reset-btn');
-    if (resetBtn && settingsPanel) {
-        resetBtn.textContent = '重启宇宙';
-        settingsPanel.appendChild(resetBtn);
-    }
+    if (resetBtn) resetBtn.textContent = '重启画布';
 
     // ── Wallpaper modes ───────────────────────────────────────────────
     document.getElementById('growth-mode-btn')?.addEventListener('click',   () => setWallpaperRandomMode('growth'));
-    document.getElementById('universe-mode-btn')?.addEventListener('click', () => setWallpaperRandomMode('universe'));
+    document.getElementById('canvas-mode-btn')?.addEventListener('click', () => setWallpaperRandomMode('canvas'));
     document.getElementById('wipe-mode-btn')?.addEventListener('click',     () => setWallpaperRandomMode('wipe'));
     document.getElementById('dim-mode-btn')?.addEventListener('click',      () => setWallpaperRandomMode('dim'));
     document.getElementById('wipe-cell-4')?.addEventListener('click',   () => setWipeCell(4));
@@ -213,11 +222,7 @@ export function bindControls(actions) {
     document.getElementById('wipe-order-random')?.addEventListener('click',  () => setWipeOrder('random'));
     document.getElementById('fill-mode-btn')?.addEventListener('click',   () => setWallpaperDisplayMode('fill'));
     document.getElementById('square-mode-btn')?.addEventListener('click', () => setWallpaperDisplayMode('square'));
-    document.getElementById('outer-color')?.addEventListener('input', event => {
-        AppState.wallpaperOuterColor = event.target.value;
-        applyWallpaperDisplay(false);
-        saveState();
-    });
+    initOuterColorSwatches(handleOuterColorClick);
     document.getElementById('mode-normal-btn')?.addEventListener('click',  () => setWallpaperMode('normal'));
     document.getElementById('mode-frosted-btn')?.addEventListener('click', () => setWallpaperMode('frosted'));
     document.getElementById('frosted-blur')?.addEventListener('input', event => setFrostedBlur(event.target.value));
@@ -240,16 +245,14 @@ export function bindControls(actions) {
     document.getElementById('jump-btn')?.addEventListener('click', jumpLatentRegion);
     document.getElementById('save-btn')?.addEventListener('click', exportMainCanvas);
     document.getElementById('record-btn')?.addEventListener('click', toggleSequenceRecording);
-    document.getElementById('universe-batch-btn')?.addEventListener('click', exportUniverseBatchZip);
+    document.getElementById('canvas-batch-btn')?.addEventListener('click', exportCanvasBatchZip);
     document.getElementById('lang-btn')?.addEventListener('click', toggleLanguage);
 
     // ── Range inputs ──────────────────────────────────────────────────
     document.getElementById('color-count')?.addEventListener('input', event => setColorLimit(event.target.value));
     document.getElementById('randomness')?.addEventListener('input', event => setRandomness(event.target.value));
 
-    // ── Legacy geometry / layer / activation / axis buttons ──────────
-    document.getElementById('form-linear-btn')?.addEventListener('click', () => setGeometryMode('linear'));
-    document.getElementById('form-radial-btn')?.addEventListener('click', () => setGeometryMode('radial'));
+    // ── Layer / activation / axis buttons ─────────────────────────────
     document.getElementById('layer-auto-btn')?.addEventListener('click', () => setLayerMode('auto'));
     document.getElementById('layer-x-btn')?.addEventListener('click',    () => setLayerMode('xTop'));
     document.getElementById('layer-y-btn')?.addEventListener('click',    () => setLayerMode('yTop'));
@@ -267,16 +270,6 @@ export function bindControls(actions) {
 
     // ── Latent map click-to-jump ──────────────────────────────────────
     document.getElementById('latent-map-canvas')?.addEventListener('click', jumpToLatentMap);
-
-    // ── Move panels into settings slots ───────────────────────────────
-    const axisSlot = document.getElementById('wallpaper-axis-slot');
-    const axisControls = document.querySelector('.axis-controls');
-    if (axisSlot && axisControls) axisSlot.appendChild(axisControls);
-    const colorSlot = document.getElementById('wallpaper-color-slot');
-    const colorPanel = document.querySelector('.palette-panel');
-    if (colorSlot && colorPanel) colorSlot.appendChild(colorPanel);
-    const colorRow = document.getElementById('color-label');
-    if (colorSlot && colorRow) colorSlot.appendChild(colorRow);
 
     // ── Keyboard shortcuts ────────────────────────────────────────────
     document.addEventListener('keydown', e => {
@@ -297,7 +290,7 @@ export function bindControls(actions) {
     if (window.wallpaperPropertyListener === undefined) {
         window.wallpaperPropertyListener = {
             applyUserProperties(properties) {
-                if (properties.randommode)    setWallpaperRandomMode(['growth', 'universe', 'wipe', 'dim'][properties.randommode.value] || 'growth');
+                if (properties.randommode)    setWallpaperRandomMode(['growth', 'canvas', 'wipe', 'dim'][properties.randommode.value] || 'growth');
                 if (properties.displaymode)   setWallpaperDisplayMode(properties.displaymode.value === 1 ? 'square' : 'fill');
                 if (properties.wallpapermode) setWallpaperMode(properties.wallpapermode.value === 1 ? 'frosted' : 'normal');
                 if (properties.frostedblur)   setFrostedBlur(properties.frostedblur.value);
@@ -322,8 +315,6 @@ export function bindControls(actions) {
     // ── Initial UI sync ───────────────────────────────────────────────
     const switchEl = document.getElementById('switch-seconds');
     if (switchEl) { switchEl.value = String(AppState.wallpaperSwitchSeconds); updateSwitchStep(switchEl); }
-    const outerEl = document.getElementById('outer-color');
-    if (outerEl) outerEl.value = AppState.wallpaperOuterColor;
 
     syncControlUI();
     applyLanguage();

@@ -1,7 +1,7 @@
 /**
  * ui.js — DOM synchronisation, i18n, palette/renderer UI helpers.
  *
- * Imports renderer.js for drawArt (used in setStudioView).
+ * Imports renderer.js for drawArt (used by manual-palette redraws).
  * Does NOT create circular deps: renderer.js does NOT import ui.js.
  */
 
@@ -26,14 +26,14 @@ export function updateText(id, value) {
 
 const UI_TEXT = {
     en: {
-        pause: 'PAUSE', resume: 'RESUME', reset: 'REBOOT UNIVERSE',
+        pause: 'PAUSE', resume: 'RESUME',
         jump: 'LATENT JUMP',
         save: 'SAVE PNG', language: '中文', colors: 'COLORS',
         random: 'RANDOM', palette: 'PALETTE', auto: 'AUTO',
         latentMap: 'LATENT MAP', decoderView: 'DECODER VIEW',
     },
     zh: {
-        pause: '暂停', resume: '继续', reset: '重启宇宙',
+        pause: '暂停', resume: '继续',
         jump: '隐空间跳跃',
         save: '保存 PNG', language: 'EN', colors: '颜色',
         random: '随机', palette: '色板', auto: '自动',
@@ -44,13 +44,12 @@ const UI_TEXT = {
 export const t = key => UI_TEXT[AppState.currentLanguage]?.[key] ?? UI_TEXT.en[key] ?? key;
 
 export function applyLanguage() {
-    updateText('reset-btn',         t('reset'));
     const wallpaperResetButton = document.getElementById('reset-btn');
-    if (wallpaperResetButton && wallpaperResetButton.parentElement?.id === 'settings-panel') wallpaperResetButton.innerText = '重启宇宙';
+    if (wallpaperResetButton) wallpaperResetButton.innerText = '重启画布';
     updateText('jump-btn',          t('jump'));
     updateText('save-btn',          t('save'));
     updateText('record-btn',        'RECORD ZIP');
-    updateText('universe-batch-btn','100 UNIVERSES');
+    updateText('canvas-batch-btn','100 CANVASES');
     updateText('lang-btn',          t('language'));
     updateText('palette-label',     t('palette'));
     updateText('palette-auto-btn',  t('auto'));
@@ -87,11 +86,11 @@ export function setPausedVisual(paused) {
     const btn       = document.getElementById('pause-btn');
     const indicator = document.querySelector('.status-indicator');
     if (btn) {
-        const isStudio = document.body.classList.contains('studio-view');
-        btn.textContent = isStudio
+        const isSettings = document.body.classList.contains('settings-view');
+        btn.textContent = isSettings
             ? (paused ? 'RESUME' : 'PAUSE')
             : String.fromCodePoint(paused ? 0x25B6 : 0x23F8);
-        btn.setAttribute('aria-label', isStudio ? (paused ? 'RESUME' : 'PAUSE') : (paused ? '继续播放' : '暂停'));
+        btn.setAttribute('aria-label', isSettings ? (paused ? 'RESUME' : 'PAUSE') : (paused ? '继续播放' : '暂停'));
     }
     if (paused) {
         if (btn) { btn.style.color = '#ef4444'; btn.style.borderColor = '#ef4444'; }
@@ -100,44 +99,6 @@ export function setPausedVisual(paused) {
         if (btn) { btn.style.color = '#d1d5db'; btn.style.borderColor = 'rgba(255, 255, 255, 0.2)'; }
         if (indicator) { indicator.style.backgroundColor = '#10b981'; indicator.style.boxShadow = '0 0 10px #10b981'; }
     }
-}
-
-// ── Studio view toggle ────────────────────────────────────────────────────
-
-export function setStudioView(enabled, shouldSave = true) {
-    document.body.classList.toggle('studio-view', enabled);
-    const studioButton = document.getElementById('studio-btn');
-    const settingsPanel = document.getElementById('settings-panel');
-    const controls      = document.querySelector('.controls');
-    const resetButton   = document.getElementById('reset-btn');
-    const pauseButton   = document.getElementById('pause-btn');
-    const colorSlot     = document.getElementById('wallpaper-color-slot');
-    const colorPanel    = document.querySelector('.palette-panel');
-    const colorRow      = document.getElementById('color-label');
-
-    if (studioButton) {
-        studioButton.setAttribute('aria-label', enabled ? '返回壁纸' : '原版工作台');
-        studioButton.textContent = enabled ? 'BACK' : '★';
-    }
-    if (settingsPanel) settingsPanel.classList.remove('open');
-
-    if (enabled && controls && resetButton && pauseButton) {
-        controls.insertBefore(resetButton, pauseButton);
-        resetButton.innerText = 'REBOOT UNIVERSE';
-        if (colorPanel) controls.appendChild(colorPanel);
-        if (colorRow)   controls.appendChild(colorRow);
-        pauseButton.innerText = AppState.isPaused ? 'RESUME' : 'PAUSE';
-        pauseButton.setAttribute('aria-label', AppState.isPaused ? 'RESUME' : 'PAUSE');
-    } else if (!enabled && settingsPanel && resetButton) {
-        settingsPanel.appendChild(resetButton);
-        resetButton.innerText = '重启宇宙';
-        if (colorSlot && colorPanel) colorSlot.appendChild(colorPanel);
-        if (colorSlot && colorRow)   colorSlot.appendChild(colorRow);
-        setPausedVisual(AppState.isPaused);
-    }
-
-    if (AppState.currentEntity) drawArt(getCanvas(), AppState.currentEntity);
-    if (shouldSave) saveState();
 }
 
 // ── Matrix UI (latent cell grid) ──────────────────────────────────────────
@@ -209,6 +170,42 @@ export function updatePaletteUI() {
     document.getElementById('palette-manual-btn')?.classList.toggle('active', hasManual);
 }
 
+// ── Outer-color (四周颜色) swatches: pick the frame surround from the palette ──
+
+export function initOuterColorSwatches(onSwatchClick) {
+    const container = document.getElementById('outer-color-swatches');
+    if (!container) return;
+    _rebuildOuterSwatches(container, onSwatchClick);
+}
+
+export function rebuildOuterColorSwatches(onSwatchClick) {
+    initOuterColorSwatches(onSwatchClick);
+}
+
+function _rebuildOuterSwatches(container, onSwatchClick) {
+    container.innerHTML = '';
+    getActivePalette().colors.forEach((color, idx) => {
+        const btn = document.createElement('button');
+        btn.type             = 'button';
+        btn.className        = 'palette-swatch outer-swatch';
+        btn.style.backgroundColor = color;
+        btn.title            = `${idx + 1}: ${color}`;
+        btn.dataset.color    = color;
+        btn.addEventListener('click', () => onSwatchClick(color));
+        container.appendChild(btn);
+    });
+    updateOuterColorUI();
+}
+
+export function updateOuterColorUI() {
+    const container = document.getElementById('outer-color-swatches');
+    if (!container) return;
+    const current = String(AppState.wallpaperOuterColor || '').toLowerCase();
+    for (const swatch of container.querySelectorAll('.outer-swatch')) {
+        swatch.classList.toggle('active', String(swatch.dataset.color).toLowerCase() === current);
+    }
+}
+
 // ── Manual palette actions ────────────────────────────────────────────────
 
 export function enableManualPalette() {
@@ -252,7 +249,6 @@ export function syncControlUI() {
     updateText('param-axis',       AppState.axisMode === 'both' ? 'XY' : AppState.axisMode.toUpperCase());
     updatePaletteUI();
 
-    _syncButtonGroup({ 'form-linear-btn': 'linear', 'form-radial-btn': 'radial' }, rendererName);
     _syncButtonGroup({ 'layer-auto-btn': 'auto', 'layer-x-btn': 'xTop', 'layer-y-btn': 'yTop' }, AppState.layerMode);
     _syncButtonGroup({ 'act-relu-btn': 'relu', 'act-leaky-btn': 'leaky', 'act-tanh-btn': 'tanh', 'act-swish-btn': 'swish' }, AppState.activationMode);
     _syncButtonGroup({ 'axis-both-btn': 'both', 'axis-x-btn': 'x', 'axis-y-btn': 'y' }, AppState.axisMode);
@@ -272,7 +268,7 @@ export function syncControlUI() {
     document.getElementById('mode-normal-btn')?.classList.toggle('active',   !frosted);
     document.getElementById('mode-frosted-btn')?.classList.toggle('active',  frosted);
     document.getElementById('growth-mode-btn')?.classList.toggle('active',   AppState.wallpaperRandomMode === 'growth');
-    document.getElementById('universe-mode-btn')?.classList.toggle('active', AppState.wallpaperRandomMode === 'universe');
+    document.getElementById('canvas-mode-btn')?.classList.toggle('active', AppState.wallpaperRandomMode === 'canvas');
     document.getElementById('wipe-mode-btn')?.classList.toggle('active',     AppState.wallpaperRandomMode === 'wipe');
     document.getElementById('dim-mode-btn')?.classList.toggle('active',      AppState.wallpaperRandomMode === 'dim');
 
@@ -287,6 +283,7 @@ export function syncControlUI() {
     _syncButtonGroup({ 'wipe-cell-4': 4, 'wipe-cell-8': 8, 'wipe-cell-16': 16, 'wipe-cell-32': 32, 'wipe-cell-64': 64 }, AppState.wipeCell);
     _syncButtonGroup({ 'wipe-order-ordered': 'ordered', 'wipe-order-random': 'random' }, AppState.wipeOrder);
 
+    updateOuterColorUI();
     _applySettingsVisibility();
 }
 
@@ -294,7 +291,6 @@ export function syncControlUI() {
 function _applySettingsVisibility() {
     const isFrosted = AppState.wallpaperMode === 'frosted';
     document.getElementById('frosted-blur-row')?.classList.toggle('hidden', !isFrosted);
-    document.getElementById('display-controls')?.classList.toggle('hidden', isFrosted);
 
     const rm = AppState.wallpaperRandomMode;
     const showGrowth = rm === 'growth';

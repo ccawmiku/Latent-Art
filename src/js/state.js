@@ -10,7 +10,7 @@ import { AppState }                            from './appState.js';
 import { DecoderNetwork }                      from './decoder.js';
 import { LatentEntity }                        from './entity.js';
 import { STORAGE_KEY }                         from './constants.js';
-import { clamp, createUniverseSeed }           from './math.js';
+import { clamp, createCanvasSeed }           from './math.js';
 import { listRenderers, setActiveRendererName, getActiveRendererName } from './renderers/registry.js';
 import { listPalettes,  setActivePaletteName,  getActivePaletteName  } from './palettes/registry.js';
 import { latentTrail }                         from './latentMap.js';
@@ -63,11 +63,11 @@ export function restoreEntity(data) {
 // ── Save ──────────────────────────────────────────────────────────────────
 
 export function saveState() {
-    if (!window.localStorage || !AppState.currentEntity || !AppState.universeDecoder) return;
+    if (!window.localStorage || !AppState.currentEntity || !AppState.canvasDecoder) return;
     try {
         const payload = {
             version:              4,
-            universeSeed:         AppState.universeSeed,
+            canvasSeed:         AppState.canvasSeed,
             generationCount:      AppState.generationCount,
             colorLimit:           AppState.colorLimit,
             randomnessLevel:      AppState.randomnessLevel,
@@ -89,7 +89,7 @@ export function saveState() {
             wipeCell:        AppState.wipeCell,
             wipeOrder:       AppState.wipeOrder,
             entity:               serializeEntity(AppState.currentEntity),
-            decoder:              serializeDecoder(AppState.universeDecoder),
+            decoder:              serializeDecoder(AppState.canvasDecoder),
         };
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (err) {
@@ -113,8 +113,10 @@ export function restoreSavedState() {
         const s = JSON.parse(raw);
         if (!s || ![3, 4].includes(s.version)) return false;
 
-        AppState.universeSeed      = Number.isFinite(s.universeSeed) ? s.universeSeed >>> 0 : createUniverseSeed();
-        AppState.universeDecoder   = restoreDecoder(s.decoder);
+        // Rename migration: legacy saves used `universeSeed` / `'universe'` mode
+        AppState.canvasSeed      = Number.isFinite(s.canvasSeed) ? s.canvasSeed >>> 0
+            : (Number.isFinite(s.universeSeed) ? s.universeSeed >>> 0 : createCanvasSeed());
+        AppState.canvasDecoder   = restoreDecoder(s.decoder);
         AppState.currentEntity     = restoreEntity(s.entity);
         AppState.generationCount   = Number.isFinite(s.generationCount) ? Math.max(0, Math.floor(s.generationCount)) : 0;
         AppState.colorLimit        = Number.isFinite(s.colorLimit) ? clamp(Math.floor(s.colorLimit), 0, 32) : 0;
@@ -123,7 +125,8 @@ export function restoreSavedState() {
         AppState.layerMode         = ['auto', 'xTop', 'yTop'].includes(s.layerMode) ? s.layerMode : 'auto';
         AppState.activationMode    = ['relu', 'leaky', 'tanh', 'swish'].includes(s.activationMode) ? s.activationMode : 'relu';
         AppState.currentLanguage   = s.currentLanguage === 'zh' ? 'zh' : 'en';
-        AppState.wallpaperRandomMode  = ['growth', 'universe'].includes(s.wallpaperRandomMode) ? s.wallpaperRandomMode : 'growth';
+        const rawMode = s.wallpaperRandomMode === 'universe' ? 'canvas' : s.wallpaperRandomMode;
+        AppState.wallpaperRandomMode  = ['growth', 'canvas'].includes(rawMode) ? rawMode : 'growth';
         AppState.wallpaperDisplayMode = ['fill', 'square'].includes(s.wallpaperDisplayMode) ? s.wallpaperDisplayMode : 'square';
         AppState.wallpaperMode    = ['normal', 'frosted'].includes(s.wallpaperMode) ? s.wallpaperMode : 'normal';
         AppState.frostedBlur      = Number.isFinite(s.frostedBlur) ? clamp(Math.round(s.frostedBlur), 0, 40) : 16;
@@ -168,12 +171,12 @@ export function restoreSavedState() {
     }
 }
 
-// ── Runtime snapshot (used by export/universe-batch) ─────────────────────
+// ── Runtime snapshot (used by export/canvas-batch) ─────────────────────
 
 export function snapshotRuntimeState() {
     return {
-        universeSeed:          AppState.universeSeed,
-        universeDecoder:       AppState.universeDecoder,
+        canvasSeed:          AppState.canvasSeed,
+        canvasDecoder:       AppState.canvasDecoder,
         currentEntity:         AppState.currentEntity,
         generationCount:       AppState.generationCount,
         colorLimit:            AppState.colorLimit,
@@ -190,8 +193,8 @@ export function snapshotRuntimeState() {
 
 export function restoreRuntimeState(snap) {
     if (!snap) return;
-    AppState.universeSeed            = snap.universeSeed;
-    AppState.universeDecoder         = snap.universeDecoder;
+    AppState.canvasSeed            = snap.canvasSeed;
+    AppState.canvasDecoder         = snap.canvasDecoder;
     AppState.currentEntity           = snap.currentEntity;
     AppState.generationCount         = snap.generationCount;
     AppState.colorLimit              = snap.colorLimit;

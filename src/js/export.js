@@ -1,5 +1,5 @@
 /**
- * export.js — PNG, ZIP sequence recording, and universe-batch export.
+ * export.js — PNG, ZIP sequence recording, and canvas-batch export.
  * Behaviour matches the original inline implementation (offscreen renders at
  * the sequence-size output resolution).
  */
@@ -9,7 +9,7 @@ import { randomizeRuntimeControls }          from './appState.js';
 import { drawArt, getCanvas }                from './renderer.js';
 import { DecoderNetwork }                    from './decoder.js';
 import { LatentEntity }                      from './entity.js';
-import { createUniverseSeed, clamp }         from './math.js';
+import { createCanvasSeed, clamp }         from './math.js';
 import { updateText, updateMatrixUI, syncControlUI } from './ui.js';
 import { snapshotRuntimeState, restoreRuntimeState, saveState, serializeEntity, restoreEntity } from './state.js';
 import { latentTrail }                       from './latentMap.js';
@@ -36,7 +36,7 @@ function getNumberInputValue(id, fallback, min, max) {
 }
 
 export async function exportMainCanvas() {
-    if (!AppState.currentEntity || !AppState.universeDecoder) return;
+    if (!AppState.currentEntity || !AppState.canvasDecoder) return;
     const outputSize  = getNumberInputValue('sequence-size', 2400, 1200, 4096);
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width  = outputSize;
@@ -155,7 +155,7 @@ export function toggleSequenceRecording() {
         stopSequenceRecording();
         return;
     }
-    if (!AppState.currentEntity || !AppState.universeDecoder) return;
+    if (!AppState.currentEntity || !AppState.canvasDecoder) return;
 
     const targetFrames = getNumberInputValue('sequence-frames', 240, 1, 1000);
     const outputSize   = getNumberInputValue('sequence-size', 2400, 1200, 4096);
@@ -258,12 +258,12 @@ function finishSequenceRecordingIfReady() {
     AppState.sequenceRecorder = null;
 }
 
-// ── Universe batch export ─────────────────────────────────────────────────
+// ── Canvas batch export ─────────────────────────────────────────────────
 
-export async function exportUniverseBatchZip() {
-    if (AppState.isRecordingUniverseBatch || AppState.isRecordingSequence) return;
+export async function exportCanvasBatchZip() {
+    if (AppState.isRecordingCanvasBatch || AppState.isRecordingSequence) return;
 
-    const button      = document.getElementById('universe-batch-btn');
+    const button      = document.getElementById('canvas-batch-btn');
     const outputSize  = getNumberInputValue('sequence-size', 2400, 1200, 4096);
     const captureCanvas = document.createElement('canvas');
     const entries     = [];
@@ -271,7 +271,7 @@ export async function exportUniverseBatchZip() {
 
     captureCanvas.width  = outputSize;
     captureCanvas.height = outputSize;
-    AppState.isRecordingUniverseBatch = true;
+    AppState.isRecordingCanvasBatch = true;
 
     if (button) {
         button.disabled = true;
@@ -280,8 +280,8 @@ export async function exportUniverseBatchZip() {
 
     try {
         for (let i = 0; i < 100; i++) {
-            AppState.universeSeed          = createUniverseSeed();
-            AppState.universeDecoder       = new DecoderNetwork();
+            AppState.canvasSeed          = createCanvasSeed();
+            AppState.canvasDecoder       = new DecoderNetwork();
             AppState.currentEntity         = new LatentEntity();
             AppState.generationCount       = 0;
             AppState.colorLimit            = 0;
@@ -295,7 +295,7 @@ export async function exportUniverseBatchZip() {
 
             const blob = await canvasToPngBlob(captureCanvas);
             entries.push({
-                name: `latent-universe-${String(i + 1).padStart(6, '0')}.png`,
+                name: `latent-canvas-${String(i + 1).padStart(6, '0')}.png`,
                 data: new Uint8Array(await blob.arrayBuffer()),
             });
 
@@ -304,13 +304,13 @@ export async function exportUniverseBatchZip() {
         }
 
         const zip = makeZipBlob(entries);
-        downloadBlob(zip, `latent-universe-batch-${outputSize}px-100.zip`);
+        downloadBlob(zip, `latent-canvas-batch-${outputSize}px-100.zip`);
     } catch (err) {
-        console.error('[Universe batch export] Failed:', err);
+        console.error('[Canvas batch export] Failed:', err);
         if (button) button.innerText = 'BATCH FAILED';
     } finally {
         restoreRuntimeState(snapshot);
-        AppState.isRecordingUniverseBatch = false;
+        AppState.isRecordingCanvasBatch = false;
         syncControlUI();
         updateText('gen-counter', AppState.generationCount);
         updateMatrixUI(AppState.currentEntity);
@@ -318,7 +318,7 @@ export async function exportUniverseBatchZip() {
         if (button) {
             setTimeout(() => {
                 button.disabled = false;
-                button.innerText = '100 UNIVERSES';
+                button.innerText = '100 CANVASES';
             }, 800);
         }
     }

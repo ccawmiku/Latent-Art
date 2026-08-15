@@ -16,7 +16,7 @@ import './palettes/index.js';
 // ── Core imports ──────────────────────────────────────────────────────────
 import { AppState, randomizeRuntimeControls } from './appState.js';
 import { LATENT_DIM, HIDDEN_1, HIDDEN_2, OUT_DIM, TAU, FPS_LIMIT, FRAME_DELAY } from './constants.js';
-import { createUniverseSeed, assert } from './math.js';
+import { createCanvasSeed, assert } from './math.js';
 import { DecoderNetwork } from './decoder.js';
 import { LatentEntity }   from './entity.js';
 import { drawArt, getCanvas } from './renderer.js';
@@ -30,7 +30,7 @@ import {
 } from './ui.js';
 import { applyWallpaperDisplay, nextWallpaper, setWallpaperRandomMode, advanceWallpaper, setWallpaperMode, setFrostedBlur, setGrowthSteps, setGrowthOvershoot, setWipeCell, setWipeOrder } from './wallpaper.js';
 import { setColorLimit, setRandomness, setAxisMode, setGeometryMode, setLayerMode, setActivationMode, setPalette, bindControls } from './controls.js';
-import { captureSequenceFrame, toggleSequenceRecording, exportUniverseBatchZip, exportMainCanvas, updateRecordButton } from './export.js';
+import { captureSequenceFrame, toggleSequenceRecording, exportCanvasBatchZip, exportMainCanvas, updateRecordButton } from './export.js';
 import { generateStripes }  from './renderers/linear.js';
 import { generateRadialSegments } from './renderers/radial.js';
 import { classicPalette }   from './palettes/classic.js';
@@ -38,9 +38,9 @@ import { applyLiquidGlass } from './liquidGlass.js';
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────
 
-function freshUniverse() {
-    AppState.universeSeed          = createUniverseSeed();
-    AppState.universeDecoder       = new DecoderNetwork();
+function freshCanvas() {
+    AppState.canvasSeed          = createCanvasSeed();
+    AppState.canvasDecoder       = new DecoderNetwork();
     AppState.currentEntity         = new LatentEntity();
     AppState.generationCount       = 0;
     AppState.colorLimit            = 0;
@@ -83,7 +83,7 @@ function bootstrap() {
     initMatrixUI();
     initLatentProjector();
 
-    if (!restoreSavedState()) freshUniverse();
+    if (!restoreSavedState()) freshCanvas();
 
     AppState.lastParams           = null;
     AppState.lastForwardState     = null;
@@ -94,8 +94,6 @@ function bootstrap() {
 
     const secondsInput = document.getElementById('switch-seconds');
     if (secondsInput) secondsInput.value = String(AppState.wallpaperSwitchSeconds);
-    const outerColorInput = document.getElementById('outer-color');
-    if (outerColorInput) outerColorInput.value = AppState.wallpaperOuterColor;
 
     setWallpaperRandomMode(AppState.wallpaperRandomMode);
     applyWallpaperDisplay(false);
@@ -116,7 +114,7 @@ function bootstrap() {
 function loop(timestamp) {
     if (AppState.isPaused) return;
 
-    if (!AppState.currentEntity || !AppState.universeDecoder) {
+    if (!AppState.currentEntity || !AppState.canvasDecoder) {
         AppState.animationId = requestAnimationFrame(loop);
         return;
     }
@@ -166,8 +164,8 @@ function togglePause() {
 }
 
 function hardReset() {
-    AppState.universeSeed          = createUniverseSeed();
-    AppState.universeDecoder       = new DecoderNetwork();
+    AppState.canvasSeed          = createCanvasSeed();
+    AppState.canvasDecoder       = new DecoderNetwork();
     AppState.currentEntity         = new LatentEntity();
     AppState.generationCount       = 0;
     AppState.lastParams            = null;
@@ -329,7 +327,7 @@ Object.assign(window, {
     setRandomness,
     clearManualPalette,
     toggleSequenceRecording,
-    exportUniverseBatchZip,
+    exportCanvasBatchZip,
     exportMainCanvas,
     setWallpaperMode,
     setFrostedBlur,

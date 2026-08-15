@@ -7,7 +7,7 @@
   "visibility": "private",
   "general": {
     "properties": {
-      "randommode": { "text": "Random mode (0 growth / 1 universe / 2 wipe / 3 dim)", "type": "slider", "value": 0, "min": 0, "max": 3, "step": 1 },
+      "randommode": { "text": "Random mode (0 growth / 1 canvas / 2 wipe / 3 dim)", "type": "slider", "value": 0, "min": 0, "max": 3, "step": 1 },
       "displaymode": { "text": "Display (0 fill / 1 centered square)", "type": "slider", "value": 0, "min": 0, "max": 1, "step": 1 },
       "wallpapermode": { "text": "Effect (0 normal / 1 frosted)", "type": "slider", "value": 0, "min": 0, "max": 1, "step": 1 },
       "frostedblur": { "text": "Frosted blur (px)", "type": "slider", "value": 16, "min": 0, "max": 40, "step": 1 },

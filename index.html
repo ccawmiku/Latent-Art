@@ -15,93 +15,102 @@
         <div class="frosted-overlay" id="frosted-overlay"></div>
 
         <div class="controls">
-            <button class="action-btn" id="studio-btn" type="button" aria-label="原版工作台">★</button>
             <button class="action-btn" id="settings-btn" type="button" aria-label="设置">⚙</button>
-            <div class="settings-panel" id="settings-panel">
-                <div class="section-label">RANDOM MODE</div>
-                <div class="segmented"><button class="action-btn active" id="growth-mode-btn" type="button">步进成长型</button><button class="action-btn" id="universe-mode-btn" type="button">随机宇宙型</button><button class="action-btn" id="wipe-mode-btn" type="button">逐条过渡</button><button class="action-btn" id="dim-mode-btn" type="button">逐维过渡</button></div>
-                <div class="settings-group" id="growth-controls">
-                    <div class="section-label">GROWTH</div>
-                    <label class="control-panel">步数 <input id="growth-steps" type="number" min="5" max="120" step="1" value="30" /><span>步</span></label>
-                    <label class="control-panel" id="growth-overshoot-row">过冲 <input id="growth-overshoot" type="range" min="0" max="100" step="1" value="65" /><span id="growth-overshoot-value">65%</span></label>
-                </div>
-                <div class="settings-group" id="wipe-controls">
-                    <div class="section-label">WIPE</div>
-                    <div class="segmented"><button class="action-btn" id="wipe-cell-4" type="button">4px</button><button class="action-btn" id="wipe-cell-8" type="button">8px</button><button class="action-btn active" id="wipe-cell-16" type="button">16px</button><button class="action-btn" id="wipe-cell-32" type="button">32px</button><button class="action-btn" id="wipe-cell-64" type="button">64px</button></div>
-                    <div class="segmented"><button class="action-btn active" id="wipe-order-ordered" type="button">顺序</button><button class="action-btn" id="wipe-order-random" type="button">随机</button></div>
-                </div>
-                <div class="settings-group" id="display-controls">
-                    <div class="section-label">DISPLAY</div>
-                    <div class="segmented" id="display-mode-slot"><button class="action-btn active" id="fill-mode-btn" type="button">满铺</button><button class="action-btn" id="square-mode-btn" type="button">正方形居中</button></div>
-                    <label class="control-panel" id="outer-color-row">四周颜色 <input id="outer-color" type="color" value="#ffffff" /></label>
-                </div>
-                <div class="section-label">EFFECT</div>
-                <div class="segmented"><button class="action-btn active" id="mode-normal-btn" type="button">正常</button><button class="action-btn" id="mode-frosted-btn" type="button">雾面</button></div>
-                <label class="control-panel" id="frosted-blur-row">模糊强度 <input id="frosted-blur" type="range" min="0" max="40" step="1" value="16" /><span id="frosted-blur-value">16px</span></label>
-                <div class="section-label">AXIS</div><div class="segmented" id="wallpaper-axis-slot"></div>
-                <label class="control-panel">切换时间 <input id="switch-seconds" type="number" min="0" max="3600" step="0.1" value="1" /><span>s</span></label>
-                <div class="section-label">COLOR</div>
-                <div id="wallpaper-color-slot">
-                    <div class="control-panel palette-panel">
-                        <span id="palette-label">PALETTE</span>
-                        <div class="palette-swatches" id="palette-swatches"></div>
-                        <button class="action-btn" id="palette-auto-btn" type="button">AUTO</button>
-                        <button class="action-btn" id="palette-manual-btn" type="button">手动</button>
-                    </div>
-                </div>
-                <div class="subtle">设置会自动保存，适合直接作为 Wallpaper Engine 的网页壁纸加载。</div>
-            </div>
             <button class="action-btn" id="pause-btn" type="button">PAUSE</button>
             <button class="action-btn" id="next-btn" type="button" aria-label="下一张">→</button>
-            <button class="action-btn" id="reset-btn" type="button">REBOOT UNIVERSE</button>
-            <button class="action-btn" id="jump-btn" type="button">LATENT JUMP</button>
-            <button class="action-btn" id="save-btn" type="button">SAVE PNG</button>
-            <button class="action-btn" id="record-btn" type="button">RECORD ZIP</button>
-            <button class="action-btn" id="universe-batch-btn" type="button">100 UNIVERSES</button>
-            <button class="action-btn" id="lang-btn" type="button">中文</button>
-            <div class="segmented" id="renderer-slot"></div>
-            <div class="segmented" id="palette-theme-slot"></div>
-            <label class="control-panel" id="frames-label">
-                FRAMES
-                <input id="sequence-frames" type="number" min="1" max="1000" step="1" value="240" />
-            </label>
-            <label class="control-panel" id="interval-label">
-                EVERY
-                <input id="sequence-interval" type="number" min="1" max="100" step="1" value="1" />
-            </label>
-            <label class="control-panel" id="size-label">
-                SIZE
-                <input id="sequence-size" type="number" min="1200" max="4096" step="100" value="2400" />
-            </label>
-            <label class="control-panel" id="color-label">
-                COLORS
-                <input id="color-count" type="range" min="0" max="32" step="1" value="0" />
-                <span id="color-count-value">AUTO</span>
-            </label>
-            <label class="control-panel" id="random-label">
-                RANDOM
-                <input id="randomness" type="range" min="0" max="100" step="1" value="40" />
-                <span id="randomness-value">40</span>
-            </label>
-            <div class="control-panel geometry-controls" aria-label="form controls">
-                <button class="action-btn active" id="form-linear-btn" type="button">LINE</button>
-                <button class="action-btn" id="form-radial-btn" type="button">CIRCLE</button>
+
+            <div class="settings-group" data-label="随机模式">
+                <div class="segmented" id="mode-slot"><button class="action-btn active" id="growth-mode-btn" type="button">步进成长型</button><button class="action-btn" id="canvas-mode-btn" type="button">随机画布型</button><button class="action-btn" id="wipe-mode-btn" type="button">逐条过渡</button><button class="action-btn" id="dim-mode-btn" type="button">逐维过渡</button></div>
             </div>
-            <div class="control-panel layer-controls" aria-label="layer controls">
-                <button class="action-btn active" id="layer-auto-btn" type="button">AUTO Z</button>
-                <button class="action-btn" id="layer-x-btn" type="button">X TOP</button>
-                <button class="action-btn" id="layer-y-btn" type="button">Y TOP</button>
+
+            <div class="settings-group" data-label="步进" id="growth-controls">
+                <label class="control-panel">步数 <input id="growth-steps" type="number" min="5" max="120" step="1" value="30" /><span>步</span></label>
+                <label class="control-panel" id="growth-overshoot-row">过冲 <input id="growth-overshoot" type="range" min="0" max="100" step="1" value="65" /><span id="growth-overshoot-value">65%</span></label>
             </div>
-            <div class="control-panel activation-controls" aria-label="activation controls">
-                <button class="action-btn active" id="act-relu-btn" type="button">RELU</button>
-                <button class="action-btn" id="act-leaky-btn" type="button">LEAKY</button>
-                <button class="action-btn" id="act-tanh-btn" type="button">TANH</button>
-                <button class="action-btn" id="act-swish-btn" type="button">SWISH</button>
+
+            <div class="settings-group" data-label="逐条" id="wipe-controls">
+                <div class="segmented"><button class="action-btn" id="wipe-cell-4" type="button">4px</button><button class="action-btn" id="wipe-cell-8" type="button">8px</button><button class="action-btn active" id="wipe-cell-16" type="button">16px</button><button class="action-btn" id="wipe-cell-32" type="button">32px</button><button class="action-btn" id="wipe-cell-64" type="button">64px</button></div>
+                <div class="segmented"><button class="action-btn active" id="wipe-order-ordered" type="button">顺序</button><button class="action-btn" id="wipe-order-random" type="button">随机</button></div>
             </div>
-            <div class="control-panel axis-controls" aria-label="axis controls">
-                <button class="action-btn active" id="axis-both-btn" type="button">XY</button>
-                <button class="action-btn" id="axis-x-btn" type="button">X</button>
-                <button class="action-btn" id="axis-y-btn" type="button">Y</button>
+
+            <div class="settings-group" data-label="显示" id="display-controls">
+                <div class="segmented"><button class="action-btn active" id="fill-mode-btn" type="button">满铺</button><button class="action-btn" id="square-mode-btn" type="button">正方形居中</button></div>
+                <div class="control-panel" id="outer-color-row">
+                    <span>四周颜色</span>
+                    <div class="palette-swatches outer-swatches" id="outer-color-swatches"></div>
+                </div>
+            </div>
+
+            <div class="settings-group" data-label="效果">
+                <div class="segmented"><button class="action-btn active" id="mode-normal-btn" type="button">正常</button><button class="action-btn" id="mode-frosted-btn" type="button">雾面</button></div>
+                <label class="control-panel" id="frosted-blur-row">模糊强度 <input id="frosted-blur" type="range" min="0" max="40" step="1" value="16" /><span id="frosted-blur-value">16px</span></label>
+            </div>
+
+            <div class="settings-group" data-label="朝向 / 时间">
+                <div class="control-panel axis-controls">
+                    <button class="action-btn active" id="axis-both-btn" type="button">XY</button>
+                    <button class="action-btn" id="axis-x-btn" type="button">X</button>
+                    <button class="action-btn" id="axis-y-btn" type="button">Y</button>
+                </div>
+                <label class="control-panel">切换时间 <input id="switch-seconds" type="number" min="0" max="3600" step="0.1" value="1" /><span>s</span></label>
+            </div>
+
+            <div class="settings-group" data-label="颜色">
+                <div class="segmented" id="palette-theme-slot"></div>
+                <div class="control-panel palette-panel">
+                    <span id="palette-label">PALETTE</span>
+                    <div class="palette-swatches" id="palette-swatches"></div>
+                    <button class="action-btn" id="palette-auto-btn" type="button">AUTO</button>
+                    <button class="action-btn" id="palette-manual-btn" type="button">手动</button>
+                </div>
+                <label class="control-panel" id="color-label">
+                    COLORS
+                    <input id="color-count" type="range" min="0" max="32" step="1" value="0" />
+                    <span id="color-count-value">AUTO</span>
+                </label>
+                <label class="control-panel" id="random-label">
+                    RANDOM
+                    <input id="randomness" type="range" min="0" max="100" step="1" value="40" />
+                    <span id="randomness-value">40</span>
+                </label>
+            </div>
+
+            <div class="settings-group" data-label="渲染">
+                <div class="segmented" id="renderer-slot"></div>
+                <div class="control-panel layer-controls">
+                    <button class="action-btn active" id="layer-auto-btn" type="button">AUTO Z</button>
+                    <button class="action-btn" id="layer-x-btn" type="button">VERT TOP</button>
+                    <button class="action-btn" id="layer-y-btn" type="button">HORIZ TOP</button>
+                </div>
+                <div class="control-panel activation-controls">
+                    <button class="action-btn active" id="act-relu-btn" type="button">RELU</button>
+                    <button class="action-btn" id="act-leaky-btn" type="button">LEAKY</button>
+                    <button class="action-btn" id="act-tanh-btn" type="button">TANH</button>
+                    <button class="action-btn" id="act-swish-btn" type="button">SWISH</button>
+                </div>
+            </div>
+
+            <div class="settings-group" data-label="序列 / 操作">
+                <label class="control-panel" id="frames-label">
+                    FRAMES
+                    <input id="sequence-frames" type="number" min="1" max="1000" step="1" value="240" />
+                </label>
+                <label class="control-panel" id="interval-label">
+                    EVERY
+                    <input id="sequence-interval" type="number" min="1" max="100" step="1" value="1" />
+                </label>
+                <label class="control-panel" id="size-label">
+                    SIZE
+                    <input id="sequence-size" type="number" min="1200" max="4096" step="100" value="2400" />
+                </label>
+                <div class="action-row">
+                    <button class="action-btn" id="reset-btn" type="button">重启画布</button>
+                    <button class="action-btn" id="jump-btn" type="button">隐空间跳跃</button>
+                    <button class="action-btn" id="save-btn" type="button">保存 PNG</button>
+                    <button class="action-btn" id="record-btn" type="button">RECORD ZIP</button>
+                    <button class="action-btn" id="canvas-batch-btn" type="button">100 CANVASES</button>
+                    <button class="action-btn" id="lang-btn" type="button">中文</button>
+                </div>
             </div>
         </div>
 

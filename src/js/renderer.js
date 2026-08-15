@@ -47,7 +47,7 @@ function syncPaletteSwatchHighlight() {
  * @param {{ updatePanels?: boolean, generationCount?: number }} [options]
  */
 export function drawArt(canvas, entity, options = {}) {
-    if (!canvas || !entity || !AppState.universeDecoder) return;
+    if (!canvas || !entity || !AppState.canvasDecoder) return;
 
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
@@ -60,7 +60,7 @@ export function drawArt(canvas, entity, options = {}) {
 
     // ── Decode params ─────────────────────────────────────────────────
     const params = entity.getPhysicalParams(
-        AppState.universeDecoder,
+        AppState.canvasDecoder,
         AppState.activationMode,
         { colorLimit: AppState.colorLimit, manualPaletteIndices: AppState.manualPaletteIndices }
     );
@@ -83,8 +83,8 @@ export function drawArt(canvas, entity, options = {}) {
 
     // ── Colour pickers + samplers ─────────────────────────────────────
     const paletteColors = getActivePalette().colors;
-    const vSampler      = createStableSampler('vertical',   params, renderGen, AppState.universeSeed, AppState.randomnessLevel);
-    const hSampler      = createStableSampler('horizontal', params, renderGen, AppState.universeSeed, AppState.randomnessLevel);
+    const vSampler      = createStableSampler('vertical',   params, renderGen, AppState.canvasSeed, AppState.randomnessLevel);
+    const hSampler      = createStableSampler('horizontal', params, renderGen, AppState.canvasSeed, AppState.randomnessLevel);
     const vPickColor    = createColorPicker(paletteColors, params.paletteIndices, params.energies, params.vPaletteBias, params.accentBias, s => vSampler(`palette:${s}`));
     const hPickColor    = createColorPicker(paletteColors, params.paletteIndices, params.energies, params.hPaletteBias, params.accentBias, s => hSampler(`palette:${s}`));
 

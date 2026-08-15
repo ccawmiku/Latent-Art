@@ -8,10 +8,10 @@
 export const AppState = {
     // ── Core simulation ───────────────────────────────────────────────
     /** @type {import('./decoder.js').DecoderNetwork|null} */
-    universeDecoder:  null,
+    canvasDecoder:  null,
     /** @type {import('./entity.js').LatentEntity|null} */
     currentEntity:    null,
-    universeSeed:     1,
+    canvasSeed:     1,
     generationCount:  0,
 
     // ── Playback ──────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ export const AppState = {
     hasBootstrapped:      false,
 
     // ── Wallpaper modes ───────────────────────────────────────────────
-    wallpaperRandomMode:   'growth',   // 'growth' | 'universe'
+    wallpaperRandomMode:   'growth',   // 'growth' | 'canvas'
     wallpaperDisplayMode:  'square',   // 'fill' | 'square'
     wallpaperMode:         'normal',   // 'normal' | 'frosted'
     frostedBlur:           16,         // px — Gaussian blur strength for frosted mode
@@ -73,13 +73,13 @@ export const AppState = {
     // ── Export / recording ────────────────────────────────────────────
     isRecordingSequence:    false,
     sequenceRecorder:       null,
-    isRecordingUniverseBatch: false,
+    isRecordingCanvasBatch: false,
 
     // ── I18n ──────────────────────────────────────────────────────────
     currentLanguage: 'en',   // 'en' | 'zh'
 };
 
-/** Nudge randomness to a fresh value (used by hardReset / fresh universes). */
+/** Nudge randomness to a fresh value (used by hardReset / fresh canvass). */
 export function randomizeRuntimeControls() {
     AppState.randomnessLevel = 0.18 + Math.random() * 0.62;
 }

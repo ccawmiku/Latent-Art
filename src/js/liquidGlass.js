@@ -8,7 +8,7 @@
  * graceful fallback for browsers that do not render `backdrop-filter: url(...)`.
  */
 
-const SELECTOR = '#studio-btn, #settings-btn, #pause-btn, #next-btn';
+const SELECTOR = '#settings-btn, #pause-btn, #next-btn';
 const MAP_SIZE = 64;      // displacement map resolution (px)
 const DISP_SCALE = 8;     // feDisplacementMap magnitude
 

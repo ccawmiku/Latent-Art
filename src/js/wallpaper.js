@@ -1,6 +1,6 @@
 /**
  * wallpaper.js — Wallpaper Engine integration helpers.
- * Handles display mode (fill/square), random mode (growth/universe), timed
+ * Handles display mode (fill/square), random mode (growth/canvas), timed
  * switching, and the "next" action.
  */
 
@@ -9,10 +9,10 @@ import { drawArt, getCanvas } from './renderer.js';
 import { saveState }          from './state.js';
 import { DecoderNetwork }     from './decoder.js';
 import { LatentEntity }       from './entity.js';
-import { clamp, createUniverseSeed, randNormal } from './math.js';
+import { clamp, createCanvasSeed, randNormal } from './math.js';
 import { LATENT_DIM }                            from './constants.js';
 import { latentTrail }        from './latentMap.js';
-import { updateText, syncControlUI } from './ui.js';
+import { updateText, syncControlUI, updateOuterColorUI } from './ui.js';
 
 // ── Display mode ──────────────────────────────────────────────────────────
 
@@ -40,6 +40,7 @@ export function applyWallpaperDisplay(redraw = true) {
 
     const row = document.getElementById('outer-color-row');
     if (row) row.style.opacity = square ? '1' : '.45';
+    updateOuterColorUI();
 
     applyFrostedUI();
 
@@ -86,7 +87,7 @@ export function setWallpaperDisplayMode(mode) {
 // ── Random mode ───────────────────────────────────────────────────────────
 
 export function setWallpaperRandomMode(mode) {
-    if (!['growth', 'universe', 'wipe', 'dim'].includes(mode)) return;
+    if (!['growth', 'canvas', 'wipe', 'dim'].includes(mode)) return;
     AppState.wallpaperRandomMode = mode;
     AppState.lastWallpaperSwitch = performance.now();
     // Reset transient journey state on every mode switch
@@ -102,7 +103,7 @@ export function setWallpaperRandomMode(mode) {
     AppState.dimTarget       = null;
     AppState.dimIndex        = 0;
     document.getElementById('growth-mode-btn')?.classList.toggle('active',   mode === 'growth');
-    document.getElementById('universe-mode-btn')?.classList.toggle('active', mode === 'universe');
+    document.getElementById('canvas-mode-btn')?.classList.toggle('active', mode === 'canvas');
     document.getElementById('wipe-mode-btn')?.classList.toggle('active',     mode === 'wipe');
     document.getElementById('dim-mode-btn')?.classList.toggle('active',      mode === 'dim');
     syncControlUI();
@@ -314,12 +315,12 @@ export function advanceDim() {
 
 // ── Advance + next ────────────────────────────────────────────────────────
 
-/** Advance the entity/universe one step (shared by timer and next button). */
+/** Advance the entity/canvas one step (shared by timer and next button). */
 export function advanceWallpaper() {
-    if (!AppState.currentEntity || !AppState.universeDecoder) return;
-    if (AppState.wallpaperRandomMode === 'universe') {
-        AppState.universeSeed          = createUniverseSeed();
-        AppState.universeDecoder       = new DecoderNetwork();
+    if (!AppState.currentEntity || !AppState.canvasDecoder) return;
+    if (AppState.wallpaperRandomMode === 'canvas') {
+        AppState.canvasSeed          = createCanvasSeed();
+        AppState.canvasDecoder       = new DecoderNetwork();
         AppState.currentEntity         = new LatentEntity();
         latentTrail.length             = 0;
         AppState.previousDecoderState  = null;
@@ -334,7 +335,7 @@ export function advanceWallpaper() {
 }
 
 export function nextWallpaper() {
-    if (!AppState.currentEntity || !AppState.universeDecoder) return;
+    if (!AppState.currentEntity || !AppState.canvasDecoder) return;
     advanceWallpaper();
     AppState.lastWallpaperSwitch = performance.now();
     // Wipe draws its stripe inside advanceWipe — a full redraw would erase it

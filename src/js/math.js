@@ -30,7 +30,7 @@ export function randNormal() {
 }
 
 /** Random 32-bit unsigned seed (never 0) */
-export function createUniverseSeed() {
+export function createCanvasSeed() {
     return (Math.floor(Math.random() * 0xFFFFFFFF) || 1) >>> 0;
 }
 

@@ -4,22 +4,22 @@ import { sigmoid, hashString, unitFromHash } from './math.js';
 
 /**
  * Returns a pure function `(salt: string) → [0, 1)` that produces
- * deterministic, stable values tied to the current universe and generation.
+ * deterministic, stable values tied to the current canvas and generation.
  *
  * @param {string} scope          - 'vertical' | 'horizontal' | any namespacing string
  * @param {object|null} params    - decoded render params (for tempo/phase)
  * @param {number} renderGeneration
- * @param {number} universeSeed
+ * @param {number} canvasSeed
  * @param {number} randomnessLevel - [0, 1]
  */
-export function createStableSampler(scope, params, renderGeneration, universeSeed, randomnessLevel) {
+export function createStableSampler(scope, params, renderGeneration, canvasSeed, randomnessLevel) {
     const tempo     = params ? params.randomTempo      : 0.34;
     const phaseBias = params ? params.randomPhaseBias  : 0;
     const phaseWarp = params ? params.randomPhaseWarp  : 0;
     const rate      = randomnessLevel <= 0 ? 0 : Math.pow(randomnessLevel, 1.35) * tempo;
     const curved    = renderGeneration + Math.sin(renderGeneration * 0.013 + phaseBias) * phaseWarp;
     const phase     = rate <= 0 ? 0 : Math.floor(curved * rate + phaseBias * 11);
-    return salt => unitFromHash(hashString(`${universeSeed}:${scope}:${phase}:${salt}`));
+    return salt => unitFromHash(hashString(`${canvasSeed}:${scope}:${phase}:${salt}`));
 }
 
 // ── Family weight helpers ─────────────────────────────────────────────────

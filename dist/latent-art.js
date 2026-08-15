@@ -15,7 +15,7 @@
     const v = Math.max(Math.random(), 1e-12);
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
   }
-  function createUniverseSeed() {
+  function createCanvasSeed() {
     return (Math.floor(Math.random() * 4294967295) || 1) >>> 0;
   }
   function hashString(value) {
@@ -589,10 +589,10 @@
   var AppState = {
     // ── Core simulation ───────────────────────────────────────────────
     /** @type {import('./decoder.js').DecoderNetwork|null} */
-    universeDecoder: null,
+    canvasDecoder: null,
     /** @type {import('./entity.js').LatentEntity|null} */
     currentEntity: null,
-    universeSeed: 1,
+    canvasSeed: 1,
     generationCount: 0,
     // ── Playback ──────────────────────────────────────────────────────
     isPaused: false,
@@ -601,7 +601,7 @@
     hasBootstrapped: false,
     // ── Wallpaper modes ───────────────────────────────────────────────
     wallpaperRandomMode: "growth",
-    // 'growth' | 'universe'
+    // 'growth' | 'canvas'
     wallpaperDisplayMode: "square",
     // 'fill' | 'square'
     wallpaperMode: "normal",
@@ -665,7 +665,7 @@
     // ── Export / recording ────────────────────────────────────────────
     isRecordingSequence: false,
     sequenceRecorder: null,
-    isRecordingUniverseBatch: false,
+    isRecordingCanvasBatch: false,
     // ── I18n ──────────────────────────────────────────────────────────
     currentLanguage: "en"
     // 'en' | 'zh'
@@ -861,14 +861,14 @@
   };
 
   // src/js/colorPicker.js
-  function createStableSampler(scope, params, renderGeneration, universeSeed, randomnessLevel) {
+  function createStableSampler(scope, params, renderGeneration, canvasSeed, randomnessLevel) {
     const tempo = params ? params.randomTempo : 0.34;
     const phaseBias = params ? params.randomPhaseBias : 0;
     const phaseWarp = params ? params.randomPhaseWarp : 0;
     const rate = randomnessLevel <= 0 ? 0 : Math.pow(randomnessLevel, 1.35) * tempo;
     const curved = renderGeneration + Math.sin(renderGeneration * 0.013 + phaseBias) * phaseWarp;
     const phase = rate <= 0 ? 0 : Math.floor(curved * rate + phaseBias * 11);
-    return (salt) => unitFromHash(hashString(`${universeSeed}:${scope}:${phase}:${salt}`));
+    return (salt) => unitFromHash(hashString(`${canvasSeed}:${scope}:${phase}:${salt}`));
   }
   function buildFamilyWeights(indices, energies, familyBias) {
     const exponent = familyBias >= 0 ? 1 + familyBias * 1.8 : 1 + familyBias * 0.6;
@@ -1056,7 +1056,7 @@
     document.getElementById("palette-manual-btn")?.classList.toggle("active", hasManual);
   }
   function drawArt(canvas, entity, options = {}) {
-    if (!canvas || !entity || !AppState.universeDecoder) return;
+    if (!canvas || !entity || !AppState.canvasDecoder) return;
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     const w = canvas.width;
@@ -1064,7 +1064,7 @@
     const updatePanels = options.updatePanels !== false;
     const renderGen = Number.isFinite(options.generationCount) ? options.generationCount : AppState.generationCount;
     const params = entity.getPhysicalParams(
-      AppState.universeDecoder,
+      AppState.canvasDecoder,
       AppState.activationMode,
       { colorLimit: AppState.colorLimit, manualPaletteIndices: AppState.manualPaletteIndices }
     );
@@ -1083,8 +1083,8 @@
       );
     }
     const paletteColors = getActivePalette().colors;
-    const vSampler = createStableSampler("vertical", params, renderGen, AppState.universeSeed, AppState.randomnessLevel);
-    const hSampler = createStableSampler("horizontal", params, renderGen, AppState.universeSeed, AppState.randomnessLevel);
+    const vSampler = createStableSampler("vertical", params, renderGen, AppState.canvasSeed, AppState.randomnessLevel);
+    const hSampler = createStableSampler("horizontal", params, renderGen, AppState.canvasSeed, AppState.randomnessLevel);
     const vPickColor = createColorPicker(paletteColors, params.paletteIndices, params.energies, params.vPaletteBias, params.accentBias, (s) => vSampler(`palette:${s}`));
     const hPickColor = createColorPicker(paletteColors, params.paletteIndices, params.energies, params.hPaletteBias, params.accentBias, (s) => hSampler(`palette:${s}`));
     const renderer = getActiveRenderer();
@@ -1165,11 +1165,11 @@
     return e;
   }
   function saveState() {
-    if (!window.localStorage || !AppState.currentEntity || !AppState.universeDecoder) return;
+    if (!window.localStorage || !AppState.currentEntity || !AppState.canvasDecoder) return;
     try {
       const payload = {
         version: 4,
-        universeSeed: AppState.universeSeed,
+        canvasSeed: AppState.canvasSeed,
         generationCount: AppState.generationCount,
         colorLimit: AppState.colorLimit,
         randomnessLevel: AppState.randomnessLevel,
@@ -1191,7 +1191,7 @@
         wipeCell: AppState.wipeCell,
         wipeOrder: AppState.wipeOrder,
         entity: serializeEntity(AppState.currentEntity),
-        decoder: serializeDecoder(AppState.universeDecoder)
+        decoder: serializeDecoder(AppState.canvasDecoder)
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (err) {
@@ -1205,8 +1205,8 @@
       if (!raw) return false;
       const s = JSON.parse(raw);
       if (!s || ![3, 4].includes(s.version)) return false;
-      AppState.universeSeed = Number.isFinite(s.universeSeed) ? s.universeSeed >>> 0 : createUniverseSeed();
-      AppState.universeDecoder = restoreDecoder(s.decoder);
+      AppState.canvasSeed = Number.isFinite(s.canvasSeed) ? s.canvasSeed >>> 0 : Number.isFinite(s.universeSeed) ? s.universeSeed >>> 0 : createCanvasSeed();
+      AppState.canvasDecoder = restoreDecoder(s.decoder);
       AppState.currentEntity = restoreEntity(s.entity);
       AppState.generationCount = Number.isFinite(s.generationCount) ? Math.max(0, Math.floor(s.generationCount)) : 0;
       AppState.colorLimit = Number.isFinite(s.colorLimit) ? clamp(Math.floor(s.colorLimit), 0, 32) : 0;
@@ -1215,7 +1215,8 @@
       AppState.layerMode = ["auto", "xTop", "yTop"].includes(s.layerMode) ? s.layerMode : "auto";
       AppState.activationMode = ["relu", "leaky", "tanh", "swish"].includes(s.activationMode) ? s.activationMode : "relu";
       AppState.currentLanguage = s.currentLanguage === "zh" ? "zh" : "en";
-      AppState.wallpaperRandomMode = ["growth", "universe"].includes(s.wallpaperRandomMode) ? s.wallpaperRandomMode : "growth";
+      const rawMode = s.wallpaperRandomMode === "universe" ? "canvas" : s.wallpaperRandomMode;
+      AppState.wallpaperRandomMode = ["growth", "canvas"].includes(rawMode) ? rawMode : "growth";
       AppState.wallpaperDisplayMode = ["fill", "square"].includes(s.wallpaperDisplayMode) ? s.wallpaperDisplayMode : "square";
       AppState.wallpaperMode = ["normal", "frosted"].includes(s.wallpaperMode) ? s.wallpaperMode : "normal";
       AppState.frostedBlur = Number.isFinite(s.frostedBlur) ? clamp(Math.round(s.frostedBlur), 0, 40) : 16;
@@ -1253,8 +1254,8 @@
   }
   function snapshotRuntimeState() {
     return {
-      universeSeed: AppState.universeSeed,
-      universeDecoder: AppState.universeDecoder,
+      canvasSeed: AppState.canvasSeed,
+      canvasDecoder: AppState.canvasDecoder,
       currentEntity: AppState.currentEntity,
       generationCount: AppState.generationCount,
       colorLimit: AppState.colorLimit,
@@ -1270,8 +1271,8 @@
   }
   function restoreRuntimeState(snap) {
     if (!snap) return;
-    AppState.universeSeed = snap.universeSeed;
-    AppState.universeDecoder = snap.universeDecoder;
+    AppState.canvasSeed = snap.canvasSeed;
+    AppState.canvasDecoder = snap.canvasDecoder;
     AppState.currentEntity = snap.currentEntity;
     AppState.generationCount = snap.generationCount;
     AppState.colorLimit = snap.colorLimit;
@@ -1295,7 +1296,6 @@
     en: {
       pause: "PAUSE",
       resume: "RESUME",
-      reset: "REBOOT UNIVERSE",
       jump: "LATENT JUMP",
       save: "SAVE PNG",
       language: "\u4E2D\u6587",
@@ -1309,7 +1309,6 @@
     zh: {
       pause: "\u6682\u505C",
       resume: "\u7EE7\u7EED",
-      reset: "\u91CD\u542F\u5B87\u5B99",
       jump: "\u9690\u7A7A\u95F4\u8DF3\u8DC3",
       save: "\u4FDD\u5B58 PNG",
       language: "EN",
@@ -1323,13 +1322,12 @@
   };
   var t = (key) => UI_TEXT[AppState.currentLanguage]?.[key] ?? UI_TEXT.en[key] ?? key;
   function applyLanguage() {
-    updateText2("reset-btn", t("reset"));
     const wallpaperResetButton = document.getElementById("reset-btn");
-    if (wallpaperResetButton && wallpaperResetButton.parentElement?.id === "settings-panel") wallpaperResetButton.innerText = "\u91CD\u542F\u5B87\u5B99";
+    if (wallpaperResetButton) wallpaperResetButton.innerText = "\u91CD\u542F\u753B\u5E03";
     updateText2("jump-btn", t("jump"));
     updateText2("save-btn", t("save"));
     updateText2("record-btn", "RECORD ZIP");
-    updateText2("universe-batch-btn", "100 UNIVERSES");
+    updateText2("canvas-batch-btn", "100 CANVASES");
     updateText2("lang-btn", t("language"));
     updateText2("palette-label", t("palette"));
     updateText2("palette-auto-btn", t("auto"));
@@ -1359,9 +1357,9 @@
     const btn = document.getElementById("pause-btn");
     const indicator = document.querySelector(".status-indicator");
     if (btn) {
-      const isStudio = document.body.classList.contains("studio-view");
-      btn.textContent = isStudio ? paused ? "RESUME" : "PAUSE" : String.fromCodePoint(paused ? 9654 : 9208);
-      btn.setAttribute("aria-label", isStudio ? paused ? "RESUME" : "PAUSE" : paused ? "\u7EE7\u7EED\u64AD\u653E" : "\u6682\u505C");
+      const isSettings = document.body.classList.contains("settings-view");
+      btn.textContent = isSettings ? paused ? "RESUME" : "PAUSE" : String.fromCodePoint(paused ? 9654 : 9208);
+      btn.setAttribute("aria-label", isSettings ? paused ? "RESUME" : "PAUSE" : paused ? "\u7EE7\u7EED\u64AD\u653E" : "\u6682\u505C");
     }
     if (paused) {
       if (btn) {
@@ -1382,38 +1380,6 @@
         indicator.style.boxShadow = "0 0 10px #10b981";
       }
     }
-  }
-  function setStudioView(enabled, shouldSave = true) {
-    document.body.classList.toggle("studio-view", enabled);
-    const studioButton = document.getElementById("studio-btn");
-    const settingsPanel = document.getElementById("settings-panel");
-    const controls = document.querySelector(".controls");
-    const resetButton = document.getElementById("reset-btn");
-    const pauseButton = document.getElementById("pause-btn");
-    const colorSlot = document.getElementById("wallpaper-color-slot");
-    const colorPanel = document.querySelector(".palette-panel");
-    const colorRow = document.getElementById("color-label");
-    if (studioButton) {
-      studioButton.setAttribute("aria-label", enabled ? "\u8FD4\u56DE\u58C1\u7EB8" : "\u539F\u7248\u5DE5\u4F5C\u53F0");
-      studioButton.textContent = enabled ? "BACK" : "\u2605";
-    }
-    if (settingsPanel) settingsPanel.classList.remove("open");
-    if (enabled && controls && resetButton && pauseButton) {
-      controls.insertBefore(resetButton, pauseButton);
-      resetButton.innerText = "REBOOT UNIVERSE";
-      if (colorPanel) controls.appendChild(colorPanel);
-      if (colorRow) controls.appendChild(colorRow);
-      pauseButton.innerText = AppState.isPaused ? "RESUME" : "PAUSE";
-      pauseButton.setAttribute("aria-label", AppState.isPaused ? "RESUME" : "PAUSE");
-    } else if (!enabled && settingsPanel && resetButton) {
-      settingsPanel.appendChild(resetButton);
-      resetButton.innerText = "\u91CD\u542F\u5B87\u5B99";
-      if (colorSlot && colorPanel) colorSlot.appendChild(colorPanel);
-      if (colorSlot && colorRow) colorSlot.appendChild(colorRow);
-      setPausedVisual(AppState.isPaused);
-    }
-    if (AppState.currentEntity) drawArt(getCanvas(), AppState.currentEntity);
-    if (shouldSave) saveState();
   }
   function initMatrixUI() {
     const container = document.getElementById("matrix-container");
@@ -1474,6 +1440,36 @@
     document.getElementById("palette-auto-btn")?.classList.toggle("active", !hasManual);
     document.getElementById("palette-manual-btn")?.classList.toggle("active", hasManual);
   }
+  function initOuterColorSwatches(onSwatchClick) {
+    const container = document.getElementById("outer-color-swatches");
+    if (!container) return;
+    _rebuildOuterSwatches(container, onSwatchClick);
+  }
+  function rebuildOuterColorSwatches(onSwatchClick) {
+    initOuterColorSwatches(onSwatchClick);
+  }
+  function _rebuildOuterSwatches(container, onSwatchClick) {
+    container.innerHTML = "";
+    getActivePalette().colors.forEach((color, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "palette-swatch outer-swatch";
+      btn.style.backgroundColor = color;
+      btn.title = `${idx + 1}: ${color}`;
+      btn.dataset.color = color;
+      btn.addEventListener("click", () => onSwatchClick(color));
+      container.appendChild(btn);
+    });
+    updateOuterColorUI();
+  }
+  function updateOuterColorUI() {
+    const container = document.getElementById("outer-color-swatches");
+    if (!container) return;
+    const current = String(AppState.wallpaperOuterColor || "").toLowerCase();
+    for (const swatch of container.querySelectorAll(".outer-swatch")) {
+      swatch.classList.toggle("active", String(swatch.dataset.color).toLowerCase() === current);
+    }
+  }
   function enableManualPalette() {
     if (AppState.manualPaletteIndices.length === 0) {
       AppState.manualPaletteIndices = AppState.lastActivePaletteIndices.length ? AppState.lastActivePaletteIndices.slice() : [0, 6, 12, 18];
@@ -1505,7 +1501,6 @@
     updateText2("param-activation", getActivationLabel(AppState.activationMode));
     updateText2("param-axis", AppState.axisMode === "both" ? "XY" : AppState.axisMode.toUpperCase());
     updatePaletteUI();
-    _syncButtonGroup({ "form-linear-btn": "linear", "form-radial-btn": "radial" }, rendererName);
     _syncButtonGroup({ "layer-auto-btn": "auto", "layer-x-btn": "xTop", "layer-y-btn": "yTop" }, AppState.layerMode);
     _syncButtonGroup({ "act-relu-btn": "relu", "act-leaky-btn": "leaky", "act-tanh-btn": "tanh", "act-swish-btn": "swish" }, AppState.activationMode);
     _syncButtonGroup({ "axis-both-btn": "both", "axis-x-btn": "x", "axis-y-btn": "y" }, AppState.axisMode);
@@ -1520,7 +1515,7 @@
     document.getElementById("mode-normal-btn")?.classList.toggle("active", !frosted);
     document.getElementById("mode-frosted-btn")?.classList.toggle("active", frosted);
     document.getElementById("growth-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "growth");
-    document.getElementById("universe-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "universe");
+    document.getElementById("canvas-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "canvas");
     document.getElementById("wipe-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "wipe");
     document.getElementById("dim-mode-btn")?.classList.toggle("active", AppState.wallpaperRandomMode === "dim");
     const gSteps = document.getElementById("growth-steps");
@@ -1530,12 +1525,12 @@
     updateText2("growth-overshoot-value", `${AppState.growthOvershoot}%`);
     _syncButtonGroup({ "wipe-cell-4": 4, "wipe-cell-8": 8, "wipe-cell-16": 16, "wipe-cell-32": 32, "wipe-cell-64": 64 }, AppState.wipeCell);
     _syncButtonGroup({ "wipe-order-ordered": "ordered", "wipe-order-random": "random" }, AppState.wipeOrder);
+    updateOuterColorUI();
     _applySettingsVisibility();
   }
   function _applySettingsVisibility() {
     const isFrosted = AppState.wallpaperMode === "frosted";
     document.getElementById("frosted-blur-row")?.classList.toggle("hidden", !isFrosted);
-    document.getElementById("display-controls")?.classList.toggle("hidden", isFrosted);
     const rm = AppState.wallpaperRandomMode;
     const showGrowth = rm === "growth";
     document.getElementById("growth-controls")?.classList.toggle("hidden", !showGrowth);
@@ -1582,6 +1577,7 @@
     document.getElementById("square-mode-btn")?.classList.toggle("active", square);
     const row = document.getElementById("outer-color-row");
     if (row) row.style.opacity = square ? "1" : ".45";
+    updateOuterColorUI();
     applyFrostedUI();
     if (redraw && AppState.currentEntity) drawArt(canvas, AppState.currentEntity);
   }
@@ -1617,7 +1613,7 @@
     saveState();
   }
   function setWallpaperRandomMode(mode) {
-    if (!["growth", "universe", "wipe", "dim"].includes(mode)) return;
+    if (!["growth", "canvas", "wipe", "dim"].includes(mode)) return;
     AppState.wallpaperRandomMode = mode;
     AppState.lastWallpaperSwitch = performance.now();
     AppState.growthStart = null;
@@ -1632,7 +1628,7 @@
     AppState.dimTarget = null;
     AppState.dimIndex = 0;
     document.getElementById("growth-mode-btn")?.classList.toggle("active", mode === "growth");
-    document.getElementById("universe-mode-btn")?.classList.toggle("active", mode === "universe");
+    document.getElementById("canvas-mode-btn")?.classList.toggle("active", mode === "canvas");
     document.getElementById("wipe-mode-btn")?.classList.toggle("active", mode === "wipe");
     document.getElementById("dim-mode-btn")?.classList.toggle("active", mode === "dim");
     syncControlUI();
@@ -1797,10 +1793,10 @@
     if (AppState.dimIndex >= LATENT_DIM) generateDimTarget();
   }
   function advanceWallpaper() {
-    if (!AppState.currentEntity || !AppState.universeDecoder) return;
-    if (AppState.wallpaperRandomMode === "universe") {
-      AppState.universeSeed = createUniverseSeed();
-      AppState.universeDecoder = new DecoderNetwork();
+    if (!AppState.currentEntity || !AppState.canvasDecoder) return;
+    if (AppState.wallpaperRandomMode === "canvas") {
+      AppState.canvasSeed = createCanvasSeed();
+      AppState.canvasDecoder = new DecoderNetwork();
       AppState.currentEntity = new LatentEntity();
       latentTrail.length = 0;
       AppState.previousDecoderState = null;
@@ -1814,7 +1810,7 @@
     AppState.generationCount++;
   }
   function nextWallpaper() {
-    if (!AppState.currentEntity || !AppState.universeDecoder) return;
+    if (!AppState.currentEntity || !AppState.canvasDecoder) return;
     advanceWallpaper();
     AppState.lastWallpaperSwitch = performance.now();
     if (AppState.wallpaperRandomMode !== "wipe") drawArt(getCanvas(), AppState.currentEntity);
@@ -1840,7 +1836,7 @@
     return clamp(Math.round(v), min, max);
   }
   async function exportMainCanvas() {
-    if (!AppState.currentEntity || !AppState.universeDecoder) return;
+    if (!AppState.currentEntity || !AppState.canvasDecoder) return;
     const outputSize = getNumberInputValue("sequence-size", 2400, 1200, 4096);
     const exportCanvas = document.createElement("canvas");
     exportCanvas.width = outputSize;
@@ -1994,7 +1990,7 @@
       stopSequenceRecording();
       return;
     }
-    if (!AppState.currentEntity || !AppState.universeDecoder) return;
+    if (!AppState.currentEntity || !AppState.canvasDecoder) return;
     const targetFrames = getNumberInputValue("sequence-frames", 240, 1, 1e3);
     const outputSize = getNumberInputValue("sequence-size", 2400, 1200, 4096);
     const interval = getNumberInputValue("sequence-interval", 1, 1, 100);
@@ -2082,24 +2078,24 @@
     AppState.isRecordingSequence = false;
     AppState.sequenceRecorder = null;
   }
-  async function exportUniverseBatchZip() {
-    if (AppState.isRecordingUniverseBatch || AppState.isRecordingSequence) return;
-    const button = document.getElementById("universe-batch-btn");
+  async function exportCanvasBatchZip() {
+    if (AppState.isRecordingCanvasBatch || AppState.isRecordingSequence) return;
+    const button = document.getElementById("canvas-batch-btn");
     const outputSize = getNumberInputValue("sequence-size", 2400, 1200, 4096);
     const captureCanvas = document.createElement("canvas");
     const entries = [];
     const snapshot = snapshotRuntimeState();
     captureCanvas.width = outputSize;
     captureCanvas.height = outputSize;
-    AppState.isRecordingUniverseBatch = true;
+    AppState.isRecordingCanvasBatch = true;
     if (button) {
       button.disabled = true;
       button.innerText = "UNI 0/100";
     }
     try {
       for (let i = 0; i < 100; i++) {
-        AppState.universeSeed = createUniverseSeed();
-        AppState.universeDecoder = new DecoderNetwork();
+        AppState.canvasSeed = createCanvasSeed();
+        AppState.canvasDecoder = new DecoderNetwork();
         AppState.currentEntity = new LatentEntity();
         AppState.generationCount = 0;
         AppState.colorLimit = 0;
@@ -2111,20 +2107,20 @@
         });
         const blob = await canvasToPngBlob(captureCanvas);
         entries.push({
-          name: `latent-universe-${String(i + 1).padStart(6, "0")}.png`,
+          name: `latent-canvas-${String(i + 1).padStart(6, "0")}.png`,
           data: new Uint8Array(await blob.arrayBuffer())
         });
         if (button) button.innerText = `UNI ${i + 1}/100`;
         if (i % 5 === 4) await new Promise((resolve) => requestAnimationFrame(resolve));
       }
       const zip = makeZipBlob(entries);
-      downloadBlob(zip, `latent-universe-batch-${outputSize}px-100.zip`);
+      downloadBlob(zip, `latent-canvas-batch-${outputSize}px-100.zip`);
     } catch (err) {
-      console.error("[Universe batch export] Failed:", err);
+      console.error("[Canvas batch export] Failed:", err);
       if (button) button.innerText = "BATCH FAILED";
     } finally {
       restoreRuntimeState(snapshot);
-      AppState.isRecordingUniverseBatch = false;
+      AppState.isRecordingCanvasBatch = false;
       syncControlUI();
       updateText2("gen-counter", AppState.generationCount);
       updateMatrixUI(AppState.currentEntity);
@@ -2132,7 +2128,7 @@
       if (button) {
         setTimeout(() => {
           button.disabled = false;
-          button.innerText = "100 UNIVERSES";
+          button.innerText = "100 CANVASES";
         }, 800);
       }
     }
@@ -2184,6 +2180,7 @@
     if (!listPalettes().includes(name)) return;
     setActivePaletteName(name);
     rebuildPaletteSwatches(handleSwatchClick);
+    rebuildOuterColorSwatches(handleOuterColorClick);
     syncControlUI();
     if (AppState.currentEntity) drawArt(getCanvas(), AppState.currentEntity);
     saveState();
@@ -2195,6 +2192,12 @@
     AppState.manualPaletteIndices = [...set].sort((a, b) => a - b);
     updatePaletteUI();
     if (AppState.currentEntity) drawArt(getCanvas(), AppState.currentEntity);
+    saveState();
+  }
+  function handleOuterColorClick(color) {
+    AppState.wallpaperOuterColor = color;
+    applyWallpaperDisplay(false);
+    updateOuterColorUI();
     saveState();
   }
   function buildRendererSlots(onRendererChange) {
@@ -2261,23 +2264,22 @@
     buildPaletteThemeSlots((name) => setPalette(name));
     initPaletteSwatches(handleSwatchClick);
     const settingsBtn = document.getElementById("settings-btn");
-    const settingsPanel = document.getElementById("settings-panel");
-    if (settingsBtn && settingsPanel) settingsBtn.addEventListener("click", () => settingsPanel.classList.toggle("open"));
+    if (settingsBtn) {
+      settingsBtn.addEventListener("click", () => {
+        document.body.classList.toggle("settings-view");
+        setPausedVisual(AppState.isPaused);
+      });
+    }
     const nextBtn = document.getElementById("next-btn");
     if (nextBtn) {
       nextBtn.setAttribute("aria-label", "Next");
       nextBtn.textContent = String.fromCodePoint(9197);
       nextBtn.addEventListener("click", nextWallpaper2);
     }
-    const studioBtn = document.getElementById("studio-btn");
-    if (studioBtn) studioBtn.addEventListener("click", () => setStudioView(!document.body.classList.contains("studio-view")));
     const resetBtn = document.getElementById("reset-btn");
-    if (resetBtn && settingsPanel) {
-      resetBtn.textContent = "\u91CD\u542F\u5B87\u5B99";
-      settingsPanel.appendChild(resetBtn);
-    }
+    if (resetBtn) resetBtn.textContent = "\u91CD\u542F\u753B\u5E03";
     document.getElementById("growth-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("growth"));
-    document.getElementById("universe-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("universe"));
+    document.getElementById("canvas-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("canvas"));
     document.getElementById("wipe-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("wipe"));
     document.getElementById("dim-mode-btn")?.addEventListener("click", () => setWallpaperRandomMode("dim"));
     document.getElementById("wipe-cell-4")?.addEventListener("click", () => setWipeCell(4));
@@ -2289,11 +2291,7 @@
     document.getElementById("wipe-order-random")?.addEventListener("click", () => setWipeOrder("random"));
     document.getElementById("fill-mode-btn")?.addEventListener("click", () => setWallpaperDisplayMode("fill"));
     document.getElementById("square-mode-btn")?.addEventListener("click", () => setWallpaperDisplayMode("square"));
-    document.getElementById("outer-color")?.addEventListener("input", (event) => {
-      AppState.wallpaperOuterColor = event.target.value;
-      applyWallpaperDisplay(false);
-      saveState();
-    });
+    initOuterColorSwatches(handleOuterColorClick);
     document.getElementById("mode-normal-btn")?.addEventListener("click", () => setWallpaperMode("normal"));
     document.getElementById("mode-frosted-btn")?.addEventListener("click", () => setWallpaperMode("frosted"));
     document.getElementById("frosted-blur")?.addEventListener("input", (event) => setFrostedBlur(event.target.value));
@@ -2314,12 +2312,10 @@
     document.getElementById("jump-btn")?.addEventListener("click", jumpLatentRegion2);
     document.getElementById("save-btn")?.addEventListener("click", exportMainCanvas);
     document.getElementById("record-btn")?.addEventListener("click", toggleSequenceRecording);
-    document.getElementById("universe-batch-btn")?.addEventListener("click", exportUniverseBatchZip);
+    document.getElementById("canvas-batch-btn")?.addEventListener("click", exportCanvasBatchZip);
     document.getElementById("lang-btn")?.addEventListener("click", toggleLanguage);
     document.getElementById("color-count")?.addEventListener("input", (event) => setColorLimit(event.target.value));
     document.getElementById("randomness")?.addEventListener("input", (event) => setRandomness(event.target.value));
-    document.getElementById("form-linear-btn")?.addEventListener("click", () => setGeometryMode("linear"));
-    document.getElementById("form-radial-btn")?.addEventListener("click", () => setGeometryMode("radial"));
     document.getElementById("layer-auto-btn")?.addEventListener("click", () => setLayerMode("auto"));
     document.getElementById("layer-x-btn")?.addEventListener("click", () => setLayerMode("xTop"));
     document.getElementById("layer-y-btn")?.addEventListener("click", () => setLayerMode("yTop"));
@@ -2333,14 +2329,6 @@
     document.getElementById("palette-auto-btn")?.addEventListener("click", clearManualPalette);
     document.getElementById("palette-manual-btn")?.addEventListener("click", enableManualPalette);
     document.getElementById("latent-map-canvas")?.addEventListener("click", jumpToLatentMap);
-    const axisSlot = document.getElementById("wallpaper-axis-slot");
-    const axisControls = document.querySelector(".axis-controls");
-    if (axisSlot && axisControls) axisSlot.appendChild(axisControls);
-    const colorSlot = document.getElementById("wallpaper-color-slot");
-    const colorPanel = document.querySelector(".palette-panel");
-    if (colorSlot && colorPanel) colorSlot.appendChild(colorPanel);
-    const colorRow = document.getElementById("color-label");
-    if (colorSlot && colorRow) colorSlot.appendChild(colorRow);
     document.addEventListener("keydown", (e) => {
       if (e.target.tagName === "INPUT") return;
       switch (e.key) {
@@ -2367,7 +2355,7 @@
     if (window.wallpaperPropertyListener === void 0) {
       window.wallpaperPropertyListener = {
         applyUserProperties(properties) {
-          if (properties.randommode) setWallpaperRandomMode(["growth", "universe", "wipe", "dim"][properties.randommode.value] || "growth");
+          if (properties.randommode) setWallpaperRandomMode(["growth", "canvas", "wipe", "dim"][properties.randommode.value] || "growth");
           if (properties.displaymode) setWallpaperDisplayMode(properties.displaymode.value === 1 ? "square" : "fill");
           if (properties.wallpapermode) setWallpaperMode(properties.wallpapermode.value === 1 ? "frosted" : "normal");
           if (properties.frostedblur) setFrostedBlur(properties.frostedblur.value);
@@ -2396,14 +2384,12 @@
       switchEl.value = String(AppState.wallpaperSwitchSeconds);
       updateSwitchStep(switchEl);
     }
-    const outerEl = document.getElementById("outer-color");
-    if (outerEl) outerEl.value = AppState.wallpaperOuterColor;
     syncControlUI();
     applyLanguage();
   }
 
   // src/js/liquidGlass.js
-  var SELECTOR = "#studio-btn, #settings-btn, #pause-btn, #next-btn";
+  var SELECTOR = "#settings-btn, #pause-btn, #next-btn";
   var MAP_SIZE = 64;
   var DISP_SCALE = 8;
   function smoothStep(a, b, t2) {
@@ -2487,9 +2473,9 @@
   }
 
   // src/js/main.js
-  function freshUniverse() {
-    AppState.universeSeed = createUniverseSeed();
-    AppState.universeDecoder = new DecoderNetwork();
+  function freshCanvas() {
+    AppState.canvasSeed = createCanvasSeed();
+    AppState.canvasDecoder = new DecoderNetwork();
     AppState.currentEntity = new LatentEntity();
     AppState.generationCount = 0;
     AppState.colorLimit = 0;
@@ -2529,7 +2515,7 @@
     AppState.hasBootstrapped = true;
     initMatrixUI();
     initLatentProjector();
-    if (!restoreSavedState()) freshUniverse();
+    if (!restoreSavedState()) freshCanvas();
     AppState.lastParams = null;
     AppState.lastForwardState = null;
     AppState.previousDecoderState = null;
@@ -2537,8 +2523,6 @@
     bindControls({ togglePause, hardReset, jumpLatentRegion, nextWallpaper });
     const secondsInput = document.getElementById("switch-seconds");
     if (secondsInput) secondsInput.value = String(AppState.wallpaperSwitchSeconds);
-    const outerColorInput = document.getElementById("outer-color");
-    if (outerColorInput) outerColorInput.value = AppState.wallpaperOuterColor;
     setWallpaperRandomMode(AppState.wallpaperRandomMode);
     applyWallpaperDisplay(false);
     setPausedVisual(false);
@@ -2553,7 +2537,7 @@
   }
   function loop(timestamp) {
     if (AppState.isPaused) return;
-    if (!AppState.currentEntity || !AppState.universeDecoder) {
+    if (!AppState.currentEntity || !AppState.canvasDecoder) {
       AppState.animationId = requestAnimationFrame(loop);
       return;
     }
@@ -2589,8 +2573,8 @@
     saveState();
   }
   function hardReset() {
-    AppState.universeSeed = createUniverseSeed();
-    AppState.universeDecoder = new DecoderNetwork();
+    AppState.canvasSeed = createCanvasSeed();
+    AppState.canvasDecoder = new DecoderNetwork();
     AppState.currentEntity = new LatentEntity();
     AppState.generationCount = 0;
     AppState.lastParams = null;
@@ -2730,7 +2714,7 @@
     setRandomness,
     clearManualPalette,
     toggleSequenceRecording,
-    exportUniverseBatchZip,
+    exportCanvasBatchZip,
     exportMainCanvas,
     setWallpaperMode,
     setFrostedBlur,
