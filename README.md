@@ -1,10 +1,12 @@
 # Latent Art Wallpaper
 
-这是基于 `ccawmiku/latent-art-canvas` `dev` 分支改造的 Wallpaper Engine 网页壁纸版本。源码为 ES 模块(`src/js`),通过 esbuild 打包成 `dist/latent-art.js`,`index.html` 加载打包产物,支持直接双击打开(file://)和 GitHub Pages 两种方式。
+这是基于 `ccawmiku/latent-art-canvas` 演进合并而来的统一仓库，集成了 **Wallpaper Engine 网页壁纸模式** 与 **原始工作台模式**（点击右下角 `★` 可切换工作台，`BACK` 返回壁纸）。源码为 ES 模块（`src/js`），通过 esbuild 打包成 `dist/latent-art.js`，`index.html` 加载打包产物，支持直接双击打开（`file://`）和 GitHub Pages 两种方式。
+
+- 原 `latent-art-canvas` 单文件 V3 版本已归档保留在 [`standalone/index.html`](standalone/index.html)，原仓库分支历史保留在 `archive/latent-art-canvas/main` 与 `archive/latent-art-canvas/archive`。
 
 ## 在线部署(GitHub Pages)
 
-本仓库通过 GitHub Pages 部署,入口为 `index.html`。Wallpaper Engine 中使用网页壁纸时,填写 Pages 地址即可:
+本仓库通过 GitHub Pages 部署（分支 `dev`）,入口为 `index.html`。Wallpaper Engine 中使用网页壁纸时,填写 Pages 地址即可:
 
 ```text
 https://ccawmiku.github.io/latent-art-canvas/

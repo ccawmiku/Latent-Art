@@ -1,0 +1,2528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Latent Art Canvas V3 - 双层解码 + 轨迹可视化</title>
+    <style>
+        :root {
+            --green: #10b981;
+            --red: #ef4444;
+            --panel: rgba(0, 0, 0, 0.72);
+            --border: rgba(255, 255, 255, 0.1);
+            --text: #d1d5db;
+            --muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #050505;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            touch-action: none;
+        }
+
+        body.exhibition header,
+        body.exhibition .params-overlay {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        body.exhibition .viz-stack {
+            display: none;
+        }
+
+        body.exhibition main {
+            display: grid;
+            grid-template-columns: 1fr;
+            grid-template-areas: "art";
+            place-items: center;
+            justify-content: center;
+            align-items: center;
+            padding-bottom: 5.5rem;
+        }
+
+        body.exhibition .controls {
+            opacity: 0.16;
+        }
+
+        body.exhibition .controls:hover {
+            opacity: 1;
+        }
+
+        header {
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.5);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            font-size: 0.875rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            color: var(--green);
+            white-space: nowrap;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 0 10px var(--green);
+            animation: pulse 1s infinite alternate;
+            display: inline-block;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.4; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1.2); }
+        }
+
+        main {
+            flex-grow: 1;
+            display: grid;
+            grid-template-columns: 460px minmax(0, 1fr);
+            grid-template-areas: "side art";
+            column-gap: 2rem;
+            align-items: center;
+            position: relative;
+            padding: 1.5rem 2rem 6.5rem;
+            min-height: 0;
+        }
+
+        .art-frame {
+            grid-area: art;
+            justify-self: center;
+            position: relative;
+            width: 100%;
+            max-width: min(72vh, 58vw);
+            aspect-ratio: 1 / 1;
+            background: #111;
+            box-shadow:
+                0 0 50px rgba(0, 0, 0, 0.8),
+                0 0 0 1px rgba(255, 255, 255, 0.1);
+        }
+
+        body.exhibition .art-frame {
+            grid-area: art;
+            justify-self: center;
+            align-self: center;
+            width: min(78vh, 78vw);
+            max-width: none;
+            transform: none;
+        }
+
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .latent-matrix {
+            display: none;
+        }
+
+        .latent-cell {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            transition: background-color 0.1s linear;
+        }
+
+        .params-overlay {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 1rem;
+            font-size: 0.75rem;
+            color: var(--muted);
+            border-radius: 4px;
+            backdrop-filter: blur(4px);
+            pointer-events: none;
+            min-width: 190px;
+            width: fit-content;
+            display: grid;
+            grid-template-columns: repeat(2, max-content);
+            column-gap: 1.2rem;
+            row-gap: 0.25rem;
+        }
+
+        .params-overlay div {
+            margin-bottom: 0;
+        }
+
+        .params-overlay span {
+            color: var(--green);
+            font-weight: 700;
+        }
+
+        .controls {
+            position: fixed;
+            right: 2rem;
+            bottom: 1.25rem;
+            left: 2rem;
+            display: flex;
+            gap: 0.75rem;
+            z-index: 20;
+            flex-wrap: wrap;
+            align-items: center;
+            transition: opacity 0.2s;
+        }
+
+        button.action-btn {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text);
+            padding: 7px 13px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            border-radius: 2px;
+            backdrop-filter: blur(4px);
+            transition: all 0.2s;
+        }
+
+        button.action-btn:hover {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        button.action-btn.active {
+            border-color: var(--green);
+            color: var(--green);
+            background: rgba(16, 185, 129, 0.16);
+        }
+
+        .control-panel {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 2px;
+            padding: 6px 9px;
+            backdrop-filter: blur(4px);
+            color: var(--muted);
+            font-size: 0.68rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .control-panel input[type="range"] {
+            width: 86px;
+            accent-color: var(--green);
+        }
+
+        .control-panel input[type="number"] {
+            width: 72px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            color: var(--green);
+            font: inherit;
+            padding: 4px 5px;
+            border-radius: 2px;
+        }
+
+        .control-panel span {
+            color: var(--green);
+            min-width: 2.4rem;
+            text-align: right;
+        }
+
+        .axis-controls,
+        .geometry-controls,
+        .layer-controls,
+        .activation-controls {
+            display: flex;
+            gap: 0.35rem;
+        }
+
+        .axis-controls button,
+        .geometry-controls button,
+        .layer-controls button,
+        .activation-controls button {
+            min-width: 32px;
+            padding: 5px 8px;
+        }
+
+        .palette-panel {
+            align-items: center;
+            gap: 0.6rem;
+            margin-top: 0.75rem;
+            width: fit-content;
+        }
+
+        .palette-swatches {
+            display: grid;
+            grid-template-columns: repeat(8, 13px);
+            gap: 3px;
+        }
+
+        .palette-swatch {
+            width: 13px;
+            height: 13px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 1px;
+            cursor: pointer;
+            outline: 0 solid transparent;
+        }
+
+        .palette-swatch.active {
+            outline: 2px solid rgba(16, 185, 129, 0.75);
+            outline-offset: 1px;
+        }
+
+        .palette-swatch.manual {
+            outline: 2px solid #ffffff;
+            outline-offset: 1px;
+        }
+
+        .viz-stack {
+            grid-area: side;
+            position: relative;
+            align-self: stretch;
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+            z-index: 15;
+            max-height: calc(100vh - 9rem);
+            overflow-y: auto;
+            padding-right: 0.35rem;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(16, 185, 129, 0.45) rgba(255, 255, 255, 0.04);
+        }
+
+        .viz-stack::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .viz-stack::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .viz-stack::-webkit-scrollbar-thumb {
+            background: rgba(16, 185, 129, 0.45);
+            border-radius: 999px;
+        }
+
+        .viz-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.75rem;
+            backdrop-filter: blur(4px);
+        }
+
+        .viz-title {
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            color: var(--muted);
+            margin-bottom: 0.5rem;
+        }
+
+        #latent-map-canvas,
+        #decoder-canvas {
+            display: block;
+            position: static;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        #latent-map-canvas {
+            width: 220px;
+            height: 220px;
+            aspect-ratio: 1 / 1;
+        }
+
+        #decoder-canvas {
+            width: 100%;
+            height: 210px;
+        }
+
+        @media (max-width: 980px) {
+            main {
+                display: grid;
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "art"
+                    "side";
+                row-gap: 1rem;
+                align-items: start;
+                justify-items: center;
+                overflow-y: auto;
+                padding: 1rem 1rem 8rem;
+            }
+
+            .viz-stack {
+                position: relative;
+                top: auto;
+                left: auto;
+                transform: none;
+                width: min(100%, 460px);
+                max-height: none;
+                overflow-y: visible;
+                padding-right: 0;
+            }
+
+            .params-overlay {
+                max-width: 100%;
+            }
+
+            .art-frame {
+                transform: none;
+                width: min(86vw, 62vh);
+                max-width: none;
+            }
+
+            .controls {
+                left: 1rem;
+                right: 1rem;
+                bottom: 1rem;
+                gap: 0.5rem;
+            }
+
+            button.action-btn {
+                padding: 7px 10px;
+                font-size: 0.65rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="brand"><span class="status-indicator"></span>AUTONOMOUS LATENT EVOLUTION</div>
+        <div>GEN <span id="gen-counter">0</span></div>
+    </header>
+
+    <main>
+        <div class="art-frame">
+            <canvas id="main-canvas" width="1200" height="1200"></canvas>
+            <div class="latent-matrix" id="matrix-container"></div>
+        </div>
+
+        <div class="controls">
+            <button class="action-btn" id="pause-btn" type="button">PAUSE</button>
+            <button class="action-btn" id="reset-btn" type="button">REBOOT UNIVERSE</button>
+            <button class="action-btn" id="jump-btn" type="button">LATENT JUMP</button>
+            <button class="action-btn" id="mode-btn" type="button">EXHIBIT MODE</button>
+            <button class="action-btn" id="save-btn" type="button">SAVE PNG</button>
+            <button class="action-btn" id="record-btn" type="button">RECORD ZIP</button>
+            <button class="action-btn" id="universe-batch-btn" type="button">100 UNIVERSES</button>
+            <button class="action-btn" id="lang-btn" type="button">中文</button>
+            <label class="control-panel" id="frames-label">
+                FRAMES
+                <input id="sequence-frames" type="number" min="1" max="1000" step="1" value="240" />
+            </label>
+            <label class="control-panel" id="interval-label">
+                EVERY
+                <input id="sequence-interval" type="number" min="1" max="100" step="1" value="1" />
+            </label>
+            <label class="control-panel" id="size-label">
+                SIZE
+                <input id="sequence-size" type="number" min="1200" max="4096" step="100" value="2400" />
+            </label>
+            <label class="control-panel" id="color-label">
+                COLORS
+                <input id="color-count" type="range" min="0" max="32" step="1" value="0" />
+                <span id="color-count-value">AUTO</span>
+            </label>
+            <label class="control-panel" id="random-label">
+                RANDOM
+                <input id="randomness" type="range" min="0" max="100" step="1" value="40" />
+                <span id="randomness-value">40</span>
+            </label>
+            <div class="control-panel geometry-controls" aria-label="form controls">
+                <button class="action-btn active" id="form-linear-btn" type="button">LINE</button>
+                <button class="action-btn" id="form-radial-btn" type="button">CIRCLE</button>
+            </div>
+            <div class="control-panel layer-controls" aria-label="layer controls">
+                <button class="action-btn active" id="layer-auto-btn" type="button">AUTO Z</button>
+                <button class="action-btn" id="layer-x-btn" type="button">X TOP</button>
+                <button class="action-btn" id="layer-y-btn" type="button">Y TOP</button>
+            </div>
+            <div class="control-panel activation-controls" aria-label="activation controls">
+                <button class="action-btn active" id="act-relu-btn" type="button">RELU</button>
+                <button class="action-btn" id="act-leaky-btn" type="button">LEAKY</button>
+                <button class="action-btn" id="act-tanh-btn" type="button">TANH</button>
+                <button class="action-btn" id="act-swish-btn" type="button">SWISH</button>
+            </div>
+            <div class="control-panel axis-controls" aria-label="axis controls">
+                <button class="action-btn active" id="axis-both-btn" type="button">XY</button>
+                <button class="action-btn" id="axis-x-btn" type="button">X</button>
+                <button class="action-btn" id="axis-y-btn" type="button">Y</button>
+            </div>
+        </div>
+
+        <div class="viz-stack">
+            <div class="viz-card">
+                <div class="viz-title">LATENT MAP</div>
+                <canvas id="latent-map-canvas" width="220" height="220"></canvas>
+            </div>
+            <div class="viz-card">
+                <div class="viz-title">DECODER VIEW</div>
+                <canvas id="decoder-canvas" width="420" height="210"></canvas>
+                <div class="control-panel palette-panel">
+                    <span id="palette-label">PALETTE</span>
+                    <div class="palette-swatches" id="palette-swatches"></div>
+                    <button class="action-btn" id="palette-auto-btn" type="button">AUTO</button>
+                </div>
+                <div class="params-overlay">
+                    <div>COLORS: <span id="param-colors">0</span>/<span id="param-color-limit">AUTO</span></div>
+                    <div>STEP: <span id="param-step">0.000</span></div>
+                    <div>V_DENS: <span id="param-vdens">0.000</span></div>
+                    <div>H_DENS: <span id="param-hdens">0.000</span></div>
+                    <div>V_SKIP: <span id="param-vskip">0.00</span></div>
+                    <div>H_SKIP: <span id="param-hskip">0.00</span></div>
+                    <div>Z_SPREAD: <span id="param-z">0.00</span></div>
+                    <div>RANDOM: <span id="param-random">0.00</span></div>
+                    <div>FORM: <span id="param-form">LINE</span></div>
+                    <div>LAYER: <span id="param-layer">AUTO</span></div>
+                    <div>ACT: <span id="param-activation">RELU</span></div>
+                    <div>AXIS: <span id="param-axis">XY</span></div>
+                    <div>SPEED: <span id="param-speed">0.00</span></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        'use strict';
+
+        const FULL_PALETTE = [
+            '#F8F9FA', '#FDF5E6', '#F0E68C', '#FFD700', '#DAA520', '#FF8C00', '#FF4500', '#E32636',
+            '#B22222', '#A0522D', '#8B4513', '#6B4423', '#C71585', '#800080', '#4B0082', '#120A8F',
+            '#003399', '#0F52BA', '#48CAE4', '#008080', '#50C878', '#00FA9A', '#228B22', '#808000',
+            '#556B2F', '#D2B48C', '#BC8F8F', '#708090', '#778899', '#A9A9A9', '#2F4F4F', '#191919'
+        ];
+
+        const LATENT_DIM = 192;
+        const HIDDEN_1 = 96;
+        const HIDDEN_2 = 64;
+        const OUT_DIM = 64;
+        const FPS_LIMIT = 8;
+        const FRAME_DELAY = 1000 / FPS_LIMIT;
+        const MAX_TRAIL_POINTS = 240;
+        const STORAGE_KEY = 'latent-art-canvas-v3-state';
+        const STRIPE_DENSITY_SCALE = 0.62;
+        const TAU = Math.PI * 2;
+
+        const sigmoid = x => 1 / (1 + Math.exp(-x));
+        const relu = x => Math.max(0, x);
+        const tanh = x => Math.tanh(x);
+        const leakyRelu = x => x > 0 ? x : x * 0.08;
+        const swish = x => x * sigmoid(x);
+        const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+        const lerp = (a, b, t) => a + (b - a) * t;
+
+        const latentProjector = { x: null, y: null };
+        const latentTrail = [];
+        const latentMapViewport = { scale: 1, maxAbs: 1 };
+        let lastLatentSpeed = 0;
+
+        let universeDecoder = null;
+        let currentEntity = null;
+        let universeSeed = 1;
+        let generationCount = 0;
+        let isPaused = false;
+        let isExhibitionMode = false;
+        let colorLimit = 0;
+        let randomnessLevel = 0.4;
+        let axisMode = 'both';
+        let geometryMode = 'linear';
+        let layerMode = 'auto';
+        let activationMode = 'relu';
+        let manualPaletteIndices = [];
+        let lastActivePaletteIndices = [];
+        let currentLanguage = 'en';
+        let animationId = null;
+        let lastParams = null;
+        let lastFrameTime = 0;
+        let hasBootstrapped = false;
+        let lastForwardState = null;
+        let previousDecoderState = null;
+        let lastPersistFrame = 0;
+        let isRecordingSequence = false;
+        let sequenceRecorder = null;
+        let isRecordingUniverseBatch = false;
+
+        function randUniform(scale = 1) {
+            return (Math.random() * 2 - 1) * scale;
+        }
+
+        function randNormal() {
+            const u = Math.max(Math.random(), 1e-12);
+            const v = Math.max(Math.random(), 1e-12);
+            return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+        }
+
+        function createUniverseSeed() {
+            return (Math.floor(Math.random() * 0xFFFFFFFF) || 1) >>> 0;
+        }
+
+        function hashString(value) {
+            const str = String(value);
+            let h = 2166136261;
+            for (let i = 0; i < str.length; i++) {
+                h ^= str.charCodeAt(i);
+                h = Math.imul(h, 16777619);
+            }
+            return h >>> 0;
+        }
+
+        function unitFromHash(hash) {
+            let x = hash >>> 0;
+            x ^= x >>> 16;
+            x = Math.imul(x, 2246822507);
+            x ^= x >>> 13;
+            x = Math.imul(x, 3266489909);
+            x ^= x >>> 16;
+            return (x >>> 0) / 4294967296;
+        }
+
+        function hexToRgb(hex) {
+            const value = hex.replace('#', '');
+            return {
+                r: parseInt(value.slice(0, 2), 16),
+                g: parseInt(value.slice(2, 4), 16),
+                b: parseInt(value.slice(4, 6), 16)
+            };
+        }
+
+        function scientificColor(t, alpha = 1) {
+            const stops = ['#440154', '#414487', '#2A788E', '#22A884', '#7AD151', '#FDE725'].map(hexToRgb);
+            const x = clamp(t, 0, 1) * (stops.length - 1);
+            const i = Math.min(stops.length - 2, Math.floor(x));
+            const f = x - i;
+            const a = stops[i];
+            const b = stops[i + 1];
+            return `rgba(${Math.round(lerp(a.r, b.r, f))},${Math.round(lerp(a.g, b.g, f))},${Math.round(lerp(a.b, b.b, f))},${alpha})`;
+        }
+
+        function createStableSampler(scope, params = null, renderGeneration = generationCount) {
+            const tempo = params ? params.randomTempo : 0.34;
+            const phaseBias = params ? params.randomPhaseBias : 0;
+            const phaseWarp = params ? params.randomPhaseWarp : 0;
+            const rate = randomnessLevel <= 0 ? 0 : Math.pow(randomnessLevel, 1.35) * tempo;
+            const curvedGeneration = renderGeneration + Math.sin(renderGeneration * 0.013 + phaseBias) * phaseWarp;
+            const phase = rate <= 0 ? 0 : Math.floor(curvedGeneration * rate + phaseBias * 11);
+            return salt => unitFromHash(hashString(`${universeSeed}:${scope}:${phase}:${salt}`));
+        }
+
+        function randomizeRuntimeControls() {
+            randomnessLevel = 0.18 + Math.random() * 0.62;
+        }
+
+        function initWeight(length, fanIn, fanOut, gain = 1) {
+            const arr = new Float32Array(length);
+            const limit = gain * Math.sqrt(6 / (fanIn + fanOut));
+            for (let i = 0; i < arr.length; i++) arr[i] = randUniform(limit);
+            return arr;
+        }
+
+        function assert(condition, message) {
+            if (!condition) throw new Error(`Self-test failed: ${message}`);
+        }
+
+        function normalizeVector(vec) {
+            let norm = 0;
+            for (let i = 0; i < vec.length; i++) norm += vec[i] * vec[i];
+            norm = Math.sqrt(norm) || 1;
+            for (let i = 0; i < vec.length; i++) vec[i] /= norm;
+        }
+
+        function initLatentProjector() {
+            latentProjector.x = new Float32Array(LATENT_DIM);
+            latentProjector.y = new Float32Array(LATENT_DIM);
+
+            for (let i = 0; i < LATENT_DIM; i++) {
+                latentProjector.x[i] = randNormal();
+                latentProjector.y[i] = randNormal();
+            }
+
+            normalizeVector(latentProjector.x);
+            normalizeVector(latentProjector.y);
+            latentTrail.length = 0;
+        }
+
+        function projectLatentTo2D(z) {
+            if (!latentProjector.x || !latentProjector.y) return { x: 0, y: 0 };
+
+            let px = 0;
+            let py = 0;
+            for (let i = 0; i < LATENT_DIM; i++) {
+                px += z[i] * latentProjector.x[i];
+                py += z[i] * latentProjector.y[i];
+            }
+            return { x: px, y: py };
+        }
+
+        function pushLatentTrail(point) {
+            const prev = latentTrail[latentTrail.length - 1];
+            const speed = prev ? Math.hypot(point.x - prev.x, point.y - prev.y) : 0;
+            lastLatentSpeed = speed;
+            latentTrail.push({ x: point.x, y: point.y, speed });
+            if (latentTrail.length > MAX_TRAIL_POINTS) latentTrail.shift();
+        }
+
+        function getHiddenActivation() {
+            if (activationMode === 'leaky') return leakyRelu;
+            if (activationMode === 'tanh') return tanh;
+            if (activationMode === 'swish') return swish;
+            return relu;
+        }
+
+        function getActivationLabel() {
+            if (activationMode === 'leaky') return 'LEAKY';
+            if (activationMode === 'tanh') return 'TANH';
+            if (activationMode === 'swish') return 'SWISH';
+            return 'RELU';
+        }
+
+        class DecoderNetwork {
+            constructor() {
+                this.w1 = initWeight(LATENT_DIM * HIDDEN_1, LATENT_DIM, HIDDEN_1, 1.15);
+                this.b1 = new Float32Array(HIDDEN_1);
+
+                this.w2 = initWeight(HIDDEN_1 * HIDDEN_2, HIDDEN_1, HIDDEN_2, 1.20);
+                this.b2 = new Float32Array(HIDDEN_2);
+
+                this.w3 = initWeight(HIDDEN_2 * OUT_DIM, HIDDEN_2, OUT_DIM, 1.10);
+                this.b3 = new Float32Array(OUT_DIM);
+
+                for (let i = 0; i < OUT_DIM; i++) this.b3[i] = randUniform(0.2);
+            }
+
+            dense(input, inDim, outDim, weights, bias, activation) {
+                const out = new Float32Array(outDim);
+                for (let i = 0; i < outDim; i++) {
+                    let sum = bias[i];
+                    const offset = i * inDim;
+                    for (let j = 0; j < inDim; j++) {
+                        sum += input[j] * weights[offset + j];
+                    }
+                    out[i] = activation(sum);
+                }
+                return out;
+            }
+
+            forward(latentZ) {
+                const h1 = this.dense(latentZ, LATENT_DIM, HIDDEN_1, this.w1, this.b1, x => tanh(x));
+                const h2 = this.dense(h1, HIDDEN_1, HIDDEN_2, this.w2, this.b2, getHiddenActivation());
+                const out = this.dense(h2, HIDDEN_2, OUT_DIM, this.w3, this.b3, x => x);
+                return { latent: latentZ, h1, h2, out };
+            }
+
+            decode(latentZ) {
+                return this.forward(latentZ).out;
+            }
+        }
+
+        class LatentEntity {
+            constructor() {
+                this.z = new Float32Array(LATENT_DIM);
+                this.velocity = new Float32Array(LATENT_DIM);
+                for (let i = 0; i < LATENT_DIM; i++) {
+                    this.z[i] = randNormal() * 1.2;
+                    this.velocity[i] = randNormal() * 0.01;
+                }
+            }
+
+            step(baseSpeed = 0.04) {
+                const pullToCenter = 0.012;
+                const friction = 0.88;
+                for (let i = 0; i < LATENT_DIM; i++) {
+                    this.velocity[i] = this.velocity[i] * friction + randNormal() * baseSpeed - this.z[i] * pullToCenter * 0.01;
+                    this.z[i] += this.velocity[i];
+                    if (this.z[i] > 5.5) this.z[i] -= (this.z[i] - 5.5) * 0.08;
+                    if (this.z[i] < -5.5) this.z[i] -= (this.z[i] + 5.5) * 0.08;
+                }
+            }
+
+            jump(amount = 0.9) {
+                for (let i = 0; i < LATENT_DIM; i++) {
+                    this.z[i] += randNormal() * amount;
+                    this.velocity[i] = randNormal() * 0.02;
+                }
+            }
+
+            getPhysicalParams(decoder) {
+                const forwardState = decoder.forward(this.z);
+                const raw = forwardState.out;
+
+                const colorThreshold = raw[0] * 0.85;
+                const colorTemperature = 0.70 + sigmoid(raw[1]) * 1.50;
+                const decodedColorTarget = 1 + Math.floor(sigmoid(raw[2]) * 31.999);
+                const requestedColorCount = colorLimit > 0 ? colorLimit : decodedColorTarget;
+                const stepMod = 0.006 + sigmoid(raw[3]) * 0.014;
+                const zSpread = 0.15 + sigmoid(raw[4]) * 0.85;
+                const globalZBias = tanh(raw[5]) * 0.25;
+                const accentBias = sigmoid(raw[6]);
+                const whitespaceBias = sigmoid(raw[7]) * 0.08;
+
+                const vDensity = 0.006 + sigmoid(raw[8]) * 0.11;
+                const vWidthMean = 0.45 + sigmoid(raw[9]) * 1.85;
+                const vWidthJitter = 0.25 + sigmoid(raw[10]) * 1.75;
+                const vSkipRate = sigmoid(raw[11]) * 0.28;
+                const vMinWidth = 0.003 + sigmoid(raw[12]) * 0.014;
+                const vClusterBias = sigmoid(raw[13]) * 2.2;
+                const vZBias = tanh(raw[14]) * 0.35;
+                const vPaletteBias = tanh(raw[15]);
+
+                const hDensity = 0.006 + sigmoid(raw[16]) * 0.11;
+                const hWidthMean = 0.45 + sigmoid(raw[17]) * 1.85;
+                const hWidthJitter = 0.25 + sigmoid(raw[18]) * 1.75;
+                const hSkipRate = sigmoid(raw[19]) * 0.28;
+                const hMinWidth = 0.003 + sigmoid(raw[20]) * 0.014;
+                const hClusterBias = sigmoid(raw[21]) * 2.2;
+                const hZBias = tanh(raw[22]) * 0.35;
+                const hPaletteBias = tanh(raw[23]);
+
+                // 保留这个变量但绘制时只做像素级微扩张，不做模糊。
+                const edgeExpand = Math.round(sigmoid(raw[24]) * 1.0);
+                const familyBalance = sigmoid(raw[25]);
+                const randomTempo = 0.035 + sigmoid(raw[26]) * 0.62;
+                const randomPhaseBias = tanh(raw[27]) * 8.0;
+                const randomPhaseWarp = sigmoid(raw[28]) * 22.0;
+
+                const energies = [];
+                let activeIndices = [];
+                let maxEnergy = -Infinity;
+                let maxIdx = 0;
+
+                for (let i = 0; i < 32; i++) {
+                    const energy = raw[32 + i] / colorTemperature;
+                    energies.push(energy);
+
+                    if (energy > maxEnergy) {
+                        maxEnergy = energy;
+                        maxIdx = i;
+                    }
+
+                    if (energy > colorThreshold) activeIndices.push(i);
+                }
+
+                if (colorLimit > 0) {
+                    activeIndices = energies
+                        .map((energy, idx) => ({ idx, energy }))
+                        .sort((a, b) => b.energy - a.energy)
+                        .slice(0, requestedColorCount)
+                        .map(x => x.idx);
+                } else {
+                    if (activeIndices.length === 0) activeIndices.push(maxIdx);
+
+                    if (activeIndices.length > requestedColorCount) {
+                        activeIndices = activeIndices
+                            .map(idx => ({ idx, energy: energies[idx] }))
+                            .sort((a, b) => b.energy - a.energy)
+                            .slice(0, requestedColorCount)
+                            .map(x => x.idx);
+                    }
+                }
+
+                if (manualPaletteIndices.length > 0) {
+                    activeIndices = manualPaletteIndices.slice();
+                }
+
+                return {
+                    paletteIndices: activeIndices,
+                    energies,
+                    colorThreshold,
+                    colorTemperature,
+                    activeColorCap: requestedColorCount,
+                    stepMod,
+                    zSpread,
+                    globalZBias,
+                    accentBias,
+                    whitespaceBias,
+                    vDensity,
+                    vWidthMean,
+                    vWidthJitter,
+                    vSkipRate,
+                    vMinWidth,
+                    vClusterBias,
+                    vZBias,
+                    vPaletteBias,
+                    hDensity,
+                    hWidthMean,
+                    hWidthJitter,
+                    hSkipRate,
+                    hMinWidth,
+                    hClusterBias,
+                    hZBias,
+                    hPaletteBias,
+                    edgeExpand,
+                    familyBalance,
+                    randomTempo,
+                    randomPhaseBias,
+                    randomPhaseWarp,
+                    _forwardState: forwardState
+                };
+            }
+        }
+
+        function getCanvas() {
+            return document.getElementById('main-canvas');
+        }
+
+        function updateText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.innerText = value;
+        }
+
+        const UI_TEXT = {
+            en: {
+                pause: 'PAUSE',
+                resume: 'RESUME',
+                reset: 'REBOOT UNIVERSE',
+                jump: 'LATENT JUMP',
+                exhibit: 'EXHIBIT MODE',
+                studio: 'STUDIO MODE',
+                save: 'SAVE PNG',
+                language: '中文',
+                colors: 'COLORS',
+                random: 'RANDOM',
+                palette: 'PALETTE',
+                auto: 'AUTO',
+                latentMap: 'LATENT MAP',
+                decoderView: 'DECODER VIEW'
+            },
+            zh: {
+                pause: '暂停',
+                resume: '继续',
+                reset: '重启宇宙',
+                jump: '隐空间跳跃',
+                exhibit: '展览模式',
+                studio: '工作室模式',
+                save: '保存 PNG',
+                language: 'EN',
+                colors: '颜色',
+                random: '随机',
+                palette: '色板',
+                auto: '自动',
+                latentMap: '隐空间图',
+                decoderView: '解码器视图'
+            }
+        };
+
+        function t(key) {
+            return UI_TEXT[currentLanguage][key] || UI_TEXT.en[key] || key;
+        }
+
+        function applyLanguage() {
+            updateText('reset-btn', t('reset'));
+            updateText('jump-btn', t('jump'));
+            updateText('save-btn', t('save'));
+            updateText('record-btn', 'RECORD ZIP');
+            updateText('universe-batch-btn', '100 UNIVERSES');
+            updateText('lang-btn', t('language'));
+            updateText('palette-label', t('palette'));
+            updateText('palette-auto-btn', t('auto'));
+
+            const framesLabel = document.getElementById('frames-label');
+            if (framesLabel) framesLabel.firstChild.nodeValue = 'FRAMES ';
+            const intervalLabel = document.getElementById('interval-label');
+            if (intervalLabel) intervalLabel.firstChild.nodeValue = 'EVERY ';
+            const sizeLabel = document.getElementById('size-label');
+            if (sizeLabel) sizeLabel.firstChild.nodeValue = 'SIZE ';
+            const colorLabel = document.getElementById('color-label');
+            if (colorLabel) colorLabel.firstChild.nodeValue = `${t('colors')} `;
+            const randomLabel = document.getElementById('random-label');
+            if (randomLabel) randomLabel.firstChild.nodeValue = `${t('random')} `;
+
+            const titles = document.querySelectorAll('.viz-title');
+            if (titles[0]) titles[0].innerText = t('latentMap');
+            if (titles[1]) titles[1].innerText = t('decoderView');
+            setPausedVisual(isPaused);
+            setExhibitionMode(isExhibitionMode, false);
+            syncControlUI(false);
+        }
+
+        function toggleLanguage() {
+            currentLanguage = currentLanguage === 'en' ? 'zh' : 'en';
+            applyLanguage();
+            saveState();
+        }
+
+        function initMatrixUI() {
+            const container = document.getElementById('matrix-container');
+            if (!container) return;
+            container.innerHTML = '';
+            for (let i = 0; i < LATENT_DIM; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'latent-cell';
+                cell.id = `cell-${i}`;
+                container.appendChild(cell);
+            }
+        }
+
+        function updateMatrixUI(entity) {
+            if (!entity) return;
+            for (let i = 0; i < LATENT_DIM; i++) {
+                const cell = document.getElementById(`cell-${i}`);
+                if (!cell) continue;
+
+                const val = entity.z[i];
+                const normalized = clamp((val + 5.5) / 11, 0, 1);
+
+                if (val > 1) {
+                    cell.style.backgroundColor = `rgba(16, 185, 129, ${normalized})`;
+                } else if (val < -1) {
+                    cell.style.backgroundColor = `rgba(239, 68, 68, ${1 - normalized})`;
+                } else {
+                    cell.style.backgroundColor = `rgba(255, 255, 255, ${normalized * 0.22})`;
+                }
+            }
+        }
+
+        function buildFamilyWeights(indices, energies, familyBias) {
+            const exponent = familyBias >= 0 ? 1 + familyBias * 1.8 : 1 + familyBias * 0.6;
+            const weights = indices.map(idx => {
+                const e = Math.max(energies[idx], -4);
+                return Math.pow(sigmoid(e * 1.4) + 0.001, exponent);
+            });
+            let total = weights.reduce((a, b) => a + b, 0);
+            if (total <= 0) total = 1;
+            return { weights, total };
+        }
+
+        function pickWeightedIndex(indices, familyWeightInfo, accentBias, randomUnit = Math.random) {
+            const { weights, total } = familyWeightInfo;
+            if (randomUnit() < accentBias) return indices[0];
+
+            let r = randomUnit() * total;
+            for (let i = 0; i < indices.length; i++) {
+                r -= weights[i];
+                if (r <= 0) return indices[i];
+            }
+            return indices[indices.length - 1];
+        }
+
+        function createColorPicker(indices, energies, familyBias, accentBias, sampler = null) {
+            const sorted = [...indices].sort((a, b) => energies[b] - energies[a]);
+            const familyWeightInfo = buildFamilyWeights(sorted, energies, familyBias);
+            return function pickColor(salt = 'color') {
+                const randomUnit = sampler ? () => sampler(salt) : Math.random;
+                const idx = pickWeightedIndex(sorted, familyWeightInfo, accentBias, randomUnit);
+                return FULL_PALETTE[idx];
+            };
+        }
+
+        function generateStripes(dir, span, config, pickColor, globalConfig, sampler = null) {
+            const stripes = [];
+            const combinedSkip = clamp(config.skipRate + globalConfig.whitespaceBias, 0, 0.42);
+            let current = 0;
+            let stripeIndex = 0;
+
+            while (current < span) {
+                const widthNoise = sampler ? sampler(`width:${stripeIndex}`) : Math.random();
+                const sampled = span * config.density * config.widthMean * (
+                    0.35 + Math.pow(widthNoise, 1 + config.clusterBias) * config.widthJitter
+                );
+
+                const minWidthPx = Math.max(1, Math.round(span * config.minWidth));
+                const rawEnd = Math.min(span, current + Math.max(sampled, minWidthPx));
+
+                // 关键修复：像素对齐，避免浮点边界被抗锯齿露出背景白缝。
+                const startPx = Math.round(current);
+                let endPx = Math.round(rawEnd);
+
+                if (endPx <= startPx) endPx = startPx + 1;
+
+                const stripeSize = endPx - startPx;
+                if (stripeSize <= 0) break;
+
+                const keepNoise = sampler ? sampler(`keep:${stripeIndex}`) : Math.random();
+                if (keepNoise > combinedSkip) {
+                    stripes.push({
+                        dir,
+                        pos: startPx,
+                        size: stripeSize,
+                        color: pickColor(`color:${stripeIndex}`),
+                        z: (sampler ? sampler(`z:${stripeIndex}`) : Math.random()) * globalConfig.zSpread + config.zBias + globalConfig.globalZBias
+                    });
+                }
+
+                current = rawEnd;
+                stripeIndex++;
+            }
+
+            return stripes;
+        }
+
+        function generateRadialSegments(dir, span, config, pickColor, globalConfig, sampler = null) {
+            const segments = [];
+            const combinedSkip = clamp(config.skipRate + globalConfig.whitespaceBias, 0, 0.42);
+            let current = 0;
+            let segmentIndex = 0;
+
+            while (current < span) {
+                const widthNoise = sampler ? sampler(`width:${segmentIndex}`) : Math.random();
+                const sampled = span * config.density * config.widthMean * (
+                    0.35 + Math.pow(widthNoise, 1 + config.clusterBias) * config.widthJitter
+                );
+                const minSize = span * config.minWidth;
+                const size = Math.max(sampled, minSize);
+                const end = Math.min(span, current + size);
+                const segmentSize = end - current;
+                if (segmentSize <= 0.0001) break;
+
+                const keepNoise = sampler ? sampler(`keep:${segmentIndex}`) : Math.random();
+                if (keepNoise > combinedSkip) {
+                    segments.push({
+                        dir,
+                        pos: current,
+                        size: segmentSize,
+                        color: pickColor(`color:${segmentIndex}`),
+                        z: (sampler ? sampler(`z:${segmentIndex}`) : Math.random()) * globalConfig.zSpread + config.zBias + globalConfig.globalZBias
+                    });
+                }
+
+                current = end;
+                segmentIndex++;
+            }
+
+            return segments;
+        }
+
+        function drawLinearParts(ctx, w, h, parts, params) {
+            ctx.globalAlpha = 1;
+            for (const s of parts) {
+                ctx.fillStyle = s.color;
+
+                if (s.dir === 'vertical') {
+                    ctx.fillRect(
+                        Math.round(s.pos),
+                        0,
+                        Math.max(1, Math.round(s.size + params.edgeExpand)),
+                        h
+                    );
+                } else {
+                    ctx.fillRect(
+                        0,
+                        Math.round(s.pos),
+                        w,
+                        Math.max(1, Math.round(s.size + params.edgeExpand))
+                    );
+                }
+            }
+        }
+
+        function drawRadialParts(ctx, w, h, parts, backgroundColor) {
+            const cx = w / 2;
+            const cy = h / 2;
+            const radius = Math.min(w, h) * 0.47;
+            const angleOverlap = 0.0035;
+            const radialOverlap = Math.max(2, radius * 0.004);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, TAU);
+            ctx.clip();
+            ctx.fillStyle = backgroundColor || '#fafafa';
+            ctx.fillRect(0, 0, w, h);
+
+            for (const s of parts) {
+                ctx.fillStyle = s.color;
+
+                if (s.dir === 'sector') {
+                    const start = -Math.PI / 2 + s.pos - angleOverlap;
+                    const end = -Math.PI / 2 + s.pos + s.size + angleOverlap;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy);
+                    ctx.arc(cx, cy, radius + radialOverlap, start, end);
+                    ctx.closePath();
+                    ctx.fill();
+                } else {
+                    const inner = Math.max(0, s.pos - radialOverlap);
+                    const outer = Math.min(radius + radialOverlap, s.pos + s.size + radialOverlap);
+                    if (outer <= inner) continue;
+
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, outer, 0, TAU);
+                    if (inner > 0) ctx.arc(cx, cy, inner, TAU, 0, true);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function sortPartsForLayerMode(parts) {
+            if (layerMode === 'xTop') {
+                parts.sort((a, b) => {
+                    const ax = a.dir === 'vertical' || a.dir === 'sector' ? 1 : 0;
+                    const bx = b.dir === 'vertical' || b.dir === 'sector' ? 1 : 0;
+                    return ax - bx || a.z - b.z;
+                });
+            } else if (layerMode === 'yTop') {
+                parts.sort((a, b) => {
+                    const ay = a.dir === 'horizontal' || a.dir === 'ring' ? 1 : 0;
+                    const by = b.dir === 'horizontal' || b.dir === 'ring' ? 1 : 0;
+                    return ay - by || a.z - b.z;
+                });
+            } else {
+                parts.sort((a, b) => a.z - b.z);
+            }
+        }
+
+        function getLayerLabel() {
+            if (layerMode === 'xTop') return geometryMode === 'radial' ? 'SECTOR TOP' : 'VERT TOP';
+            if (layerMode === 'yTop') return geometryMode === 'radial' ? 'RING TOP' : 'HORIZ TOP';
+            return 'AUTO';
+        }
+
+        function drawLatentMap(currentPoint) {
+            const canvas = document.getElementById('latent-map-canvas');
+            if (!canvas) return;
+
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.imageSmoothingEnabled = false;
+
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#0b0b0b';
+            ctx.fillRect(0, 0, w, h);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(w / 2, 0);
+            ctx.lineTo(w / 2, h);
+            ctx.moveTo(0, h / 2);
+            ctx.lineTo(w, h / 2);
+            ctx.stroke();
+
+            let maxAbs = 1;
+            for (const p of latentTrail) {
+                maxAbs = Math.max(maxAbs, Math.abs(p.x), Math.abs(p.y));
+            }
+
+            const scale = 0.42 * Math.min(w, h) / maxAbs;
+            latentMapViewport.scale = scale;
+            latentMapViewport.maxAbs = maxAbs;
+            const mapX = x => w / 2 + x * scale;
+            const mapY = y => h / 2 - y * scale;
+
+            let maxSpeed = 1e-6;
+            for (const p of latentTrail) maxSpeed = Math.max(maxSpeed, p.speed || 0);
+
+            if (latentTrail.length > 1) {
+                ctx.lineWidth = 2;
+                for (let i = 1; i < latentTrail.length; i++) {
+                    const a = latentTrail[i - 1];
+                    const b = latentTrail[i];
+                    const speedT = clamp((b.speed || 0) / maxSpeed, 0, 1);
+                    ctx.beginPath();
+                    ctx.moveTo(mapX(a.x), mapY(a.y));
+                    ctx.lineTo(mapX(b.x), mapY(b.y));
+                    ctx.strokeStyle = scientificColor(speedT, 0.78);
+                    ctx.stroke();
+                }
+            }
+
+            ctx.beginPath();
+            ctx.arc(mapX(currentPoint.x), mapY(currentPoint.y), 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(mapX(currentPoint.x), mapY(currentPoint.y), 7, 0, Math.PI * 2);
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function drawDecoderView(forwardState) {
+            const canvas = document.getElementById('decoder-canvas');
+            if (!canvas || !forwardState) return;
+
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.imageSmoothingEnabled = false;
+
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#0b0b0b';
+            ctx.fillRect(0, 0, w, h);
+
+            const panelCell = 6;
+            const panelY = 48;
+            const prev = previousDecoderState;
+            const layers = [
+                { key: 'latent', label: 'Z', dim: LATENT_DIM, values: forwardState.latent, prev: prev && prev.latent, cols: 12, rows: 16, x: 16 },
+                { key: 'h1', label: 'H1', dim: HIDDEN_1, values: forwardState.h1, prev: prev && prev.h1, cols: 12, rows: 8, x: 116 },
+                { key: 'h2', label: 'H2', dim: HIDDEN_2, values: forwardState.h2, prev: prev && prev.h2, cols: 8, rows: 8, x: 216 },
+                { key: 'out', label: 'OUT', dim: OUT_DIM, values: forwardState.out, prev: prev && prev.out, cols: 8, rows: 8, x: 316 }
+            ];
+
+            function maxAbs(values) {
+                let m = 1e-6;
+                for (const v of values) m = Math.max(m, Math.abs(v));
+                return m;
+            }
+
+            for (const layer of layers) {
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '10px monospace';
+                ctx.fillText(`${layer.label} ${layer.dim}`, layer.x, 20);
+
+                const panelHeight = layer.rows * panelCell;
+                const panelWidth = layer.cols * panelCell;
+                ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+                ctx.strokeRect(
+                    layer.x - 1,
+                    panelY - 1,
+                    panelWidth + 1,
+                    panelHeight + 1
+                );
+
+                const m = maxAbs(layer.values);
+                let maxDelta = 1e-6;
+                if (layer.prev) {
+                    for (let i = 0; i < layer.values.length; i++) {
+                        maxDelta = Math.max(maxDelta, Math.abs(layer.values[i] - layer.prev[i]));
+                    }
+                }
+
+                const slots = layer.cols * layer.rows;
+
+                for (let i = 0; i < slots; i++) {
+                    if (i >= layer.values.length) continue;
+
+                    const v = layer.values[i];
+                    const signed = clamp(v / m, -1, 1);
+                    const delta = layer.prev ? Math.abs(v - layer.prev[i]) / maxDelta : 0;
+                    const colorT = clamp((signed + 1) / 2 + delta * 0.16, 0, 1);
+                    const alpha = 0.76 + delta * 0.24;
+                    const col = i % layer.cols;
+                    const row = Math.floor(i / layer.cols);
+
+                    ctx.fillStyle = scientificColor(colorT, alpha);
+                    ctx.fillRect(
+                        layer.x + col * panelCell,
+                        panelY + row * panelCell,
+                        panelCell - 1,
+                        panelCell - 1
+                    );
+                }
+            }
+
+            previousDecoderState = {
+                latent: new Float32Array(forwardState.latent),
+                h1: new Float32Array(forwardState.h1),
+                h2: new Float32Array(forwardState.h2),
+                out: new Float32Array(forwardState.out)
+            };
+        }
+
+        function drawArt(canvas, entity, options = {}) {
+            if (!canvas || !entity || !universeDecoder) return;
+
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+
+            const w = canvas.width;
+            const h = canvas.height;
+            const updatePanels = options.updatePanels !== false;
+            const renderGeneration = Number.isFinite(options.generationCount) ? options.generationCount : generationCount;
+            const params = entity.getPhysicalParams(universeDecoder);
+            if (updatePanels) {
+                lastParams = params;
+                lastForwardState = params._forwardState;
+                lastActivePaletteIndices = params.paletteIndices.slice();
+                updatePaletteUI();
+
+                const currentPoint = projectLatentTo2D(entity.z);
+                pushLatentTrail(currentPoint);
+                drawLatentMap(currentPoint);
+                drawDecoderView(lastForwardState);
+            }
+
+            ctx.globalAlpha = 1;
+            ctx.clearRect(0, 0, w, h);
+            if (geometryMode !== 'radial') {
+                ctx.fillStyle = '#fafafa';
+                ctx.fillRect(0, 0, w, h);
+            }
+
+            const vSampler = createStableSampler('vertical', params, renderGeneration);
+            const hSampler = createStableSampler('horizontal', params, renderGeneration);
+            const vPickColor = createColorPicker(params.paletteIndices, params.energies, params.vPaletteBias, params.accentBias, salt => vSampler(`palette:${salt}`));
+            const hPickColor = createColorPicker(params.paletteIndices, params.energies, params.hPaletteBias, params.accentBias, salt => hSampler(`palette:${salt}`));
+
+            const verticalStripes = generateStripes(
+                'vertical',
+                w,
+                {
+                    density: params.vDensity * STRIPE_DENSITY_SCALE * (0.75 + params.familyBalance * 0.5),
+                    widthMean: params.vWidthMean,
+                    widthJitter: params.vWidthJitter,
+                    skipRate: params.vSkipRate,
+                    minWidth: params.vMinWidth,
+                    clusterBias: params.vClusterBias,
+                    zBias: params.vZBias
+                },
+                vPickColor,
+                {
+                    whitespaceBias: params.whitespaceBias,
+                    zSpread: params.zSpread,
+                    globalZBias: params.globalZBias
+                },
+                vSampler
+            );
+
+            const horizontalStripes = generateStripes(
+                'horizontal',
+                h,
+                {
+                    density: params.hDensity * STRIPE_DENSITY_SCALE * (1.25 - params.familyBalance * 0.5),
+                    widthMean: params.hWidthMean,
+                    widthJitter: params.hWidthJitter,
+                    skipRate: params.hSkipRate,
+                    minWidth: params.hMinWidth,
+                    clusterBias: params.hClusterBias,
+                    zBias: params.hZBias
+                },
+                hPickColor,
+                {
+                    whitespaceBias: params.whitespaceBias,
+                    zSpread: params.zSpread,
+                    globalZBias: params.globalZBias
+                },
+                hSampler
+            );
+
+            let parts = [];
+
+            if (geometryMode === 'radial') {
+                const radius = Math.min(w, h) * 0.47;
+                const sectorSegments = generateRadialSegments(
+                    'sector',
+                    TAU,
+                    {
+                        density: params.vDensity * STRIPE_DENSITY_SCALE * 0.92 * (0.75 + params.familyBalance * 0.5),
+                        widthMean: params.vWidthMean,
+                        widthJitter: params.vWidthJitter,
+                        skipRate: params.vSkipRate,
+                        minWidth: Math.max(0.006, params.vMinWidth * 1.1),
+                        clusterBias: params.vClusterBias,
+                        zBias: params.vZBias
+                    },
+                    vPickColor,
+                    {
+                        whitespaceBias: params.whitespaceBias,
+                        zSpread: params.zSpread,
+                        globalZBias: params.globalZBias
+                    },
+                    vSampler
+                );
+
+                const ringSegments = generateRadialSegments(
+                    'ring',
+                    radius,
+                    {
+                        density: params.hDensity * STRIPE_DENSITY_SCALE * (1.25 - params.familyBalance * 0.5),
+                        widthMean: params.hWidthMean,
+                        widthJitter: params.hWidthJitter,
+                        skipRate: params.hSkipRate,
+                        minWidth: params.hMinWidth,
+                        clusterBias: params.hClusterBias,
+                        zBias: params.hZBias
+                    },
+                    hPickColor,
+                    {
+                        whitespaceBias: params.whitespaceBias,
+                        zSpread: params.zSpread,
+                        globalZBias: params.globalZBias
+                    },
+                    hSampler
+                );
+
+                if (axisMode === 'both' || axisMode === 'x') parts = parts.concat(sectorSegments);
+                if (axisMode === 'both' || axisMode === 'y') parts = parts.concat(ringSegments);
+
+                if (parts.length < 3) {
+                    if (axisMode === 'both' || axisMode === 'x') {
+                        parts.push({ dir: 'sector', pos: 0, size: TAU * 0.18, color: FULL_PALETTE[0], z: 0 });
+                    }
+                    if (axisMode === 'both' || axisMode === 'y') {
+                        parts.push({ dir: 'ring', pos: radius * 0.24, size: radius * 0.28, color: FULL_PALETTE[6], z: 1 });
+                    }
+                }
+
+                const radialBackground = params.paletteIndices.length > 0
+                    ? FULL_PALETTE[params.paletteIndices[0]]
+                    : '#fafafa';
+
+                sortPartsForLayerMode(parts);
+                drawRadialParts(ctx, w, h, parts, radialBackground);
+            } else {
+                if (axisMode === 'both' || axisMode === 'x') parts = parts.concat(verticalStripes);
+                if (axisMode === 'both' || axisMode === 'y') parts = parts.concat(horizontalStripes);
+
+                if (parts.length < 3) {
+                    if (axisMode === 'both' || axisMode === 'x') {
+                        parts.push({ dir: 'vertical', pos: 0, size: Math.round(w * 0.28), color: FULL_PALETTE[0], z: 0 });
+                    }
+                    if (axisMode === 'both' || axisMode === 'y') {
+                        parts.push({ dir: 'horizontal', pos: Math.round(h * 0.2), size: Math.round(h * 0.38), color: FULL_PALETTE[6], z: 1 });
+                    }
+                }
+
+                sortPartsForLayerMode(parts);
+                drawLinearParts(ctx, w, h, parts, params);
+            }
+
+            if (updatePanels) {
+                updateText('param-colors', params.paletteIndices.length);
+                updateText('param-step', params.stepMod.toFixed(3));
+                updateText('param-vdens', params.vDensity.toFixed(3));
+                updateText('param-hdens', params.hDensity.toFixed(3));
+                updateText('param-vskip', params.vSkipRate.toFixed(2));
+                updateText('param-hskip', params.hSkipRate.toFixed(2));
+                updateText('param-z', params.zSpread.toFixed(2));
+                updateText('param-random', randomnessLevel.toFixed(2));
+                updateText('param-form', geometryMode === 'radial' ? 'CIRCLE' : 'LINE');
+                updateText('param-layer', getLayerLabel());
+                updateText('param-activation', getActivationLabel());
+                updateText('param-axis', axisMode === 'both' ? 'XY' : axisMode.toUpperCase());
+                updateText('param-speed', lastLatentSpeed.toFixed(2));
+            }
+        }
+
+        function loop(timestamp) {
+            if (isPaused) return;
+
+            if (!currentEntity || !universeDecoder) {
+                animationId = requestAnimationFrame(loop);
+                return;
+            }
+
+            if (timestamp - lastFrameTime >= FRAME_DELAY) {
+                lastFrameTime = timestamp;
+                const speed = (lastParams ? lastParams.stepMod : 0.04) * randomnessLevel;
+                if (speed > 0) {
+                    currentEntity.step(speed);
+                    generationCount++;
+                    drawArt(getCanvas(), currentEntity);
+                    captureSequenceFrame(currentEntity, generationCount);
+                    updateText('gen-counter', generationCount);
+                    updateMatrixUI(currentEntity);
+                    maybePersistState();
+                }
+            }
+
+            animationId = requestAnimationFrame(loop);
+        }
+
+        function startAnimation() {
+            if (animationId !== null) cancelAnimationFrame(animationId);
+            lastFrameTime = performance.now();
+            animationId = requestAnimationFrame(loop);
+        }
+
+        function setPausedVisual(paused) {
+            const btn = document.getElementById('pause-btn');
+            const indicator = document.querySelector('.status-indicator');
+
+            if (paused) {
+                if (btn) {
+                    btn.innerText = t('resume');
+                    btn.style.color = '#ef4444';
+                    btn.style.borderColor = '#ef4444';
+                }
+                if (indicator) {
+                    indicator.style.backgroundColor = '#ef4444';
+                    indicator.style.boxShadow = '0 0 10px #ef4444';
+                }
+            } else {
+                if (btn) {
+                    btn.innerText = t('pause');
+                    btn.style.color = '#d1d5db';
+                    btn.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                }
+                if (indicator) {
+                    indicator.style.backgroundColor = '#10b981';
+                    indicator.style.boxShadow = '0 0 10px #10b981';
+                }
+            }
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            setPausedVisual(isPaused);
+            updateRecordButton();
+
+            if (isPaused) {
+                if (animationId !== null) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+            } else {
+                startAnimation();
+            }
+
+            saveState();
+        }
+
+        function serializeArray(arr) {
+            return Array.from(arr, v => Number(v.toFixed(6)));
+        }
+
+        function loadArray(target, source) {
+            if (Array.isArray(source) && source.length === target.length) {
+                target.set(source);
+                return true;
+            }
+            return false;
+        }
+
+        function serializeDecoder(decoder) {
+            if (!decoder) return null;
+            return {
+                w1: serializeArray(decoder.w1),
+                b1: serializeArray(decoder.b1),
+                w2: serializeArray(decoder.w2),
+                b2: serializeArray(decoder.b2),
+                w3: serializeArray(decoder.w3),
+                b3: serializeArray(decoder.b3)
+            };
+        }
+
+        function restoreDecoder(data) {
+            const decoder = new DecoderNetwork();
+            if (!data) return decoder;
+            loadArray(decoder.w1, data.w1);
+            loadArray(decoder.b1, data.b1);
+            loadArray(decoder.w2, data.w2);
+            loadArray(decoder.b2, data.b2);
+            loadArray(decoder.w3, data.w3);
+            loadArray(decoder.b3, data.b3);
+            return decoder;
+        }
+
+        function serializeEntity(entity) {
+            if (!entity) return null;
+            return {
+                z: serializeArray(entity.z),
+                velocity: serializeArray(entity.velocity)
+            };
+        }
+
+        function restoreEntity(data) {
+            const entity = new LatentEntity();
+            if (!data) return entity;
+            loadArray(entity.z, data.z);
+            loadArray(entity.velocity, data.velocity);
+            return entity;
+        }
+
+        function saveState() {
+            if (!window.localStorage || !currentEntity || !universeDecoder) return;
+            try {
+                const state = {
+                    version: 3,
+                    universeSeed,
+                    generationCount,
+                    isExhibitionMode,
+                    colorLimit,
+                    randomnessLevel,
+                    axisMode,
+                    geometryMode,
+                    layerMode,
+                    activationMode,
+                    manualPaletteIndices,
+                    currentLanguage,
+                    entity: serializeEntity(currentEntity),
+                    decoder: serializeDecoder(universeDecoder)
+                };
+                window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            } catch (err) {
+                console.warn('[State] Save skipped:', err.message);
+            }
+        }
+
+        function maybePersistState() {
+            if (generationCount - lastPersistFrame < 48) return;
+            lastPersistFrame = generationCount;
+            saveState();
+        }
+
+        function restoreSavedState() {
+            if (!window.localStorage) return false;
+            try {
+                const raw = window.localStorage.getItem(STORAGE_KEY);
+                if (!raw) return false;
+                const state = JSON.parse(raw);
+                if (!state || state.version !== 3) return false;
+
+                universeSeed = Number.isFinite(state.universeSeed) ? state.universeSeed >>> 0 : createUniverseSeed();
+                universeDecoder = restoreDecoder(state.decoder);
+                currentEntity = restoreEntity(state.entity);
+                generationCount = Number.isFinite(state.generationCount) ? Math.max(0, Math.floor(state.generationCount)) : 0;
+                isExhibitionMode = Boolean(state.isExhibitionMode);
+                colorLimit = Number.isFinite(state.colorLimit) ? clamp(Math.floor(state.colorLimit), 0, 32) : 0;
+                randomnessLevel = Number.isFinite(state.randomnessLevel) ? clamp(state.randomnessLevel, 0, 1) : 0.4;
+                axisMode = ['both', 'x', 'y'].includes(state.axisMode) ? state.axisMode : 'both';
+                geometryMode = ['linear', 'radial'].includes(state.geometryMode) ? state.geometryMode : 'linear';
+                layerMode = ['auto', 'xTop', 'yTop'].includes(state.layerMode) ? state.layerMode : 'auto';
+                activationMode = ['relu', 'leaky', 'tanh', 'swish'].includes(state.activationMode) ? state.activationMode : 'relu';
+                manualPaletteIndices = Array.isArray(state.manualPaletteIndices)
+                    ? state.manualPaletteIndices.map(x => Math.floor(x)).filter(x => x >= 0 && x < FULL_PALETTE.length)
+                    : [];
+                currentLanguage = state.currentLanguage === 'zh' ? 'zh' : 'en';
+                lastPersistFrame = generationCount;
+                return true;
+            } catch (err) {
+                console.warn('[State] Restore skipped:', err.message);
+                return false;
+            }
+        }
+
+        function setExhibitionMode(enabled, shouldSave = true) {
+            isExhibitionMode = enabled;
+            document.body.classList.toggle('exhibition', enabled);
+
+            const btn = document.getElementById('mode-btn');
+            if (btn) btn.innerText = enabled ? t('studio') : t('exhibit');
+
+            if (shouldSave) saveState();
+        }
+
+        function toggleExhibitionMode() {
+            setExhibitionMode(!isExhibitionMode);
+        }
+
+        function syncControlUI() {
+            const colorInput = document.getElementById('color-count');
+            if (colorInput) colorInput.value = String(colorLimit);
+            const randomInput = document.getElementById('randomness');
+            const randomValue = Math.round(randomnessLevel * 100);
+            if (randomInput) randomInput.value = String(randomValue);
+            updateText('color-count-value', colorLimit === 0 ? 'AUTO' : colorLimit);
+            updateText('param-color-limit', colorLimit === 0 ? 'AUTO' : colorLimit);
+            updateText('randomness-value', randomValue);
+            updateText('param-random', randomnessLevel.toFixed(2));
+            updateText('param-form', geometryMode === 'radial' ? 'CIRCLE' : 'LINE');
+            updateText('param-layer', getLayerLabel());
+            updateText('param-activation', getActivationLabel());
+            updateText('param-axis', axisMode === 'both' ? 'XY' : axisMode.toUpperCase());
+            updatePaletteUI();
+
+            const geometryButtons = {
+                linear: document.getElementById('form-linear-btn'),
+                radial: document.getElementById('form-radial-btn')
+            };
+
+            for (const [mode, btn] of Object.entries(geometryButtons)) {
+                if (btn) btn.classList.toggle('active', geometryMode === mode);
+            }
+
+            const layerButtons = {
+                auto: document.getElementById('layer-auto-btn'),
+                xTop: document.getElementById('layer-x-btn'),
+                yTop: document.getElementById('layer-y-btn')
+            };
+
+            if (layerButtons.auto) layerButtons.auto.innerText = 'AUTO Z';
+            if (layerButtons.xTop) layerButtons.xTop.innerText = geometryMode === 'radial' ? 'SECTOR TOP' : 'VERT TOP';
+            if (layerButtons.yTop) layerButtons.yTop.innerText = geometryMode === 'radial' ? 'RING TOP' : 'HORIZ TOP';
+
+            for (const [mode, btn] of Object.entries(layerButtons)) {
+                if (btn) btn.classList.toggle('active', layerMode === mode);
+            }
+
+            const activationButtons = {
+                relu: document.getElementById('act-relu-btn'),
+                leaky: document.getElementById('act-leaky-btn'),
+                tanh: document.getElementById('act-tanh-btn'),
+                swish: document.getElementById('act-swish-btn')
+            };
+
+            for (const [mode, btn] of Object.entries(activationButtons)) {
+                if (btn) btn.classList.toggle('active', activationMode === mode);
+            }
+
+            const axisButtons = {
+                both: document.getElementById('axis-both-btn'),
+                x: document.getElementById('axis-x-btn'),
+                y: document.getElementById('axis-y-btn')
+            };
+
+            for (const [mode, btn] of Object.entries(axisButtons)) {
+                if (btn) btn.classList.toggle('active', axisMode === mode);
+            }
+        }
+
+        function setColorLimit(value) {
+            colorLimit = clamp(Math.floor(Number(value) || 0), 0, 32);
+            syncControlUI();
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+        }
+
+        function setRandomness(value) {
+            randomnessLevel = clamp((Number(value) || 0) / 100, 0, 1);
+            syncControlUI();
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+        }
+
+        function setAxisMode(mode) {
+            if (!['both', 'x', 'y'].includes(mode)) return;
+            axisMode = mode;
+            syncControlUI();
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+        }
+
+        function setGeometryMode(mode) {
+            if (!['linear', 'radial'].includes(mode)) return;
+            geometryMode = mode;
+            syncControlUI();
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+        }
+
+        function setLayerMode(mode) {
+            if (!['auto', 'xTop', 'yTop'].includes(mode)) return;
+            layerMode = mode;
+            syncControlUI();
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+        }
+
+        function setActivationMode(mode) {
+            if (!['relu', 'leaky', 'tanh', 'swish'].includes(mode)) return;
+            activationMode = mode;
+            previousDecoderState = null;
+            syncControlUI();
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+        }
+
+        function initPaletteUI() {
+            const container = document.getElementById('palette-swatches');
+            if (!container) return;
+            container.innerHTML = '';
+
+            FULL_PALETTE.forEach((color, idx) => {
+                const swatch = document.createElement('button');
+                swatch.type = 'button';
+                swatch.className = 'palette-swatch';
+                swatch.style.backgroundColor = color;
+                swatch.title = `${idx + 1}: ${color}`;
+                swatch.dataset.index = String(idx);
+                swatch.addEventListener('click', () => toggleManualPaletteIndex(idx));
+                container.appendChild(swatch);
+            });
+
+            updatePaletteUI();
+        }
+
+        function updatePaletteUI() {
+            const container = document.getElementById('palette-swatches');
+            if (!container) return;
+
+            const selected = new Set(manualPaletteIndices);
+            const active = new Set(lastActivePaletteIndices);
+            const hasManual = manualPaletteIndices.length > 0;
+
+            for (const swatch of container.querySelectorAll('.palette-swatch')) {
+                const idx = Number(swatch.dataset.index);
+                swatch.classList.toggle('manual', selected.has(idx));
+                swatch.classList.toggle('active', hasManual ? selected.has(idx) : active.has(idx));
+            }
+
+            const autoBtn = document.getElementById('palette-auto-btn');
+            if (autoBtn) autoBtn.classList.toggle('active', !hasManual);
+        }
+
+        function toggleManualPaletteIndex(idx) {
+            const existing = manualPaletteIndices.indexOf(idx);
+            if (existing >= 0) manualPaletteIndices.splice(existing, 1);
+            else manualPaletteIndices.push(idx);
+            manualPaletteIndices.sort((a, b) => a - b);
+
+            syncControlUI();
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+        }
+
+        function clearManualPalette() {
+            manualPaletteIndices = [];
+            syncControlUI();
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+        }
+
+        async function exportMainCanvas() {
+            if (!currentEntity || !universeDecoder) return;
+
+            const outputSize = getNumberInputValue('sequence-size', 2400, 1200, 4096);
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = outputSize;
+            exportCanvas.height = outputSize;
+
+            drawArt(exportCanvas, currentEntity, {
+                updatePanels: false,
+                generationCount
+            });
+
+            const blob = await canvasToPngBlob(exportCanvas);
+            downloadBlob(blob, `latent-art-${String(generationCount).padStart(6, '0')}-${outputSize}px.png`);
+        }
+
+        function getNumberInputValue(id, fallback, min, max) {
+            const input = document.getElementById(id);
+            const value = input ? Number(input.value) : fallback;
+            return clamp(Math.floor(Number.isFinite(value) ? value : fallback), min, max);
+        }
+
+        function canvasToPngBlob(canvas) {
+            return new Promise((resolve, reject) => {
+                canvas.toBlob(blob => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('PNG export failed'));
+                }, 'image/png');
+            });
+        }
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = url;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }
+
+        const CRC_TABLE = (() => {
+            const table = new Uint32Array(256);
+            for (let i = 0; i < 256; i++) {
+                let c = i;
+                for (let j = 0; j < 8; j++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+                table[i] = c >>> 0;
+            }
+            return table;
+        })();
+
+        function crc32(bytes) {
+            let crc = 0xFFFFFFFF;
+            for (let i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+            return (crc ^ 0xFFFFFFFF) >>> 0;
+        }
+
+        function dosDateTime(date = new Date()) {
+            const time =
+                (date.getHours() << 11) |
+                (date.getMinutes() << 5) |
+                Math.floor(date.getSeconds() / 2);
+            const day =
+                ((date.getFullYear() - 1980) << 9) |
+                ((date.getMonth() + 1) << 5) |
+                date.getDate();
+            return { time, day };
+        }
+
+        function writeU16(bytes, value) {
+            bytes.push(value & 0xFF, (value >>> 8) & 0xFF);
+        }
+
+        function writeU32(bytes, value) {
+            bytes.push(value & 0xFF, (value >>> 8) & 0xFF, (value >>> 16) & 0xFF, (value >>> 24) & 0xFF);
+        }
+
+        function makeZipBlob(entries) {
+            const encoder = new TextEncoder();
+            const fileChunks = [];
+            const centralChunks = [];
+            const { time, day } = dosDateTime();
+            let offset = 0;
+
+            for (const entry of entries) {
+                const nameBytes = encoder.encode(entry.name);
+                const data = entry.data;
+                const crc = crc32(data);
+                const local = [];
+
+                writeU32(local, 0x04034B50);
+                writeU16(local, 20);
+                writeU16(local, 0);
+                writeU16(local, 0);
+                writeU16(local, time);
+                writeU16(local, day);
+                writeU32(local, crc);
+                writeU32(local, data.length);
+                writeU32(local, data.length);
+                writeU16(local, nameBytes.length);
+                writeU16(local, 0);
+
+                const localHeader = new Uint8Array(local);
+                fileChunks.push(localHeader, nameBytes, data);
+
+                const central = [];
+                writeU32(central, 0x02014B50);
+                writeU16(central, 20);
+                writeU16(central, 20);
+                writeU16(central, 0);
+                writeU16(central, 0);
+                writeU16(central, time);
+                writeU16(central, day);
+                writeU32(central, crc);
+                writeU32(central, data.length);
+                writeU32(central, data.length);
+                writeU16(central, nameBytes.length);
+                writeU16(central, 0);
+                writeU16(central, 0);
+                writeU16(central, 0);
+                writeU16(central, 0);
+                writeU32(central, 0);
+                writeU32(central, offset);
+                centralChunks.push(new Uint8Array(central), nameBytes);
+
+                offset += localHeader.length + nameBytes.length + data.length;
+            }
+
+            const centralSize = centralChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const end = [];
+            writeU32(end, 0x06054B50);
+            writeU16(end, 0);
+            writeU16(end, 0);
+            writeU16(end, entries.length);
+            writeU16(end, entries.length);
+            writeU32(end, centralSize);
+            writeU32(end, offset);
+            writeU16(end, 0);
+
+            return new Blob([...fileChunks, ...centralChunks, new Uint8Array(end)], { type: 'application/zip' });
+        }
+
+        function resetRecordButton(label = 'RECORD ZIP') {
+            const recordBtn = document.getElementById('record-btn');
+            if (!recordBtn) return;
+            recordBtn.disabled = false;
+            recordBtn.innerText = label;
+        }
+
+        function updateRecordButton() {
+            const recordBtn = document.getElementById('record-btn');
+            if (!recordBtn || !sequenceRecorder) return;
+
+            const count = sequenceRecorder.entries.length;
+            const target = sequenceRecorder.targetFrames;
+            const suffix = isPaused ? ' PAUSED' : '';
+            recordBtn.innerText = `STOP ${count}/${target}${suffix}`;
+        }
+
+        function toggleSequenceRecording() {
+            if (isRecordingSequence) {
+                stopSequenceRecording();
+                return;
+            }
+
+            if (!currentEntity || !universeDecoder) return;
+
+            const targetFrames = getNumberInputValue('sequence-frames', 240, 1, 1000);
+            const outputSize = getNumberInputValue('sequence-size', 2400, 1200, 4096);
+            const interval = getNumberInputValue('sequence-interval', 1, 1, 100);
+
+            sequenceRecorder = {
+                active: true,
+                targetFrames,
+                outputSize,
+                interval,
+                entries: [],
+                visibleFrameCount: 0,
+                pendingCaptures: 0,
+                startGeneration: generationCount,
+                stopRequested: false,
+                finishing: false
+            };
+
+            isRecordingSequence = true;
+            updateRecordButton();
+        }
+
+        function stopSequenceRecording() {
+            if (!sequenceRecorder) return;
+            sequenceRecorder.stopRequested = true;
+            sequenceRecorder.active = false;
+            updateRecordButton();
+            finishSequenceRecordingIfReady();
+        }
+
+        function captureSequenceFrame(entity, renderGeneration) {
+            const recorder = sequenceRecorder;
+            if (!recorder || !recorder.active || recorder.stopRequested) return;
+            if (recorder.entries.length + recorder.pendingCaptures >= recorder.targetFrames) {
+                stopSequenceRecording();
+                return;
+            }
+
+            recorder.visibleFrameCount++;
+            if ((recorder.visibleFrameCount - 1) % recorder.interval !== 0) return;
+
+            const frameNumber = recorder.entries.length + recorder.pendingCaptures + 1;
+            const entitySnapshot = restoreEntity(serializeEntity(entity));
+            recorder.pendingCaptures++;
+            updateRecordButton();
+
+            captureSequenceFrameAsync(recorder, entitySnapshot, renderGeneration, frameNumber);
+        }
+
+        async function captureSequenceFrameAsync(recorder, entitySnapshot, renderGeneration, frameNumber) {
+            try {
+                const captureCanvas = document.createElement('canvas');
+                captureCanvas.width = recorder.outputSize;
+                captureCanvas.height = recorder.outputSize;
+
+                drawArt(captureCanvas, entitySnapshot, {
+                    updatePanels: false,
+                    generationCount: renderGeneration
+                });
+
+                const blob = await canvasToPngBlob(captureCanvas);
+                recorder.entries.push({
+                    name: `latent-art-frame-${String(frameNumber).padStart(6, '0')}.png`,
+                    data: new Uint8Array(await blob.arrayBuffer())
+                });
+            } catch (err) {
+                console.error('[Sequence export] Frame capture failed:', err);
+                recorder.stopRequested = true;
+                recorder.active = false;
+            } finally {
+                recorder.pendingCaptures--;
+
+                if (recorder.entries.length >= recorder.targetFrames) {
+                    recorder.stopRequested = true;
+                    recorder.active = false;
+                }
+
+                updateRecordButton();
+                finishSequenceRecordingIfReady();
+            }
+        }
+
+        function finishSequenceRecordingIfReady() {
+            const recorder = sequenceRecorder;
+            if (!recorder || recorder.finishing) return;
+            if (!recorder.stopRequested || recorder.pendingCaptures > 0) return;
+
+            recorder.finishing = true;
+            const entries = recorder.entries.slice().sort((a, b) => a.name.localeCompare(b.name));
+
+            if (entries.length > 0) {
+                const zip = makeZipBlob(entries);
+                const filename = `latent-art-sequence-gen-${String(recorder.startGeneration).padStart(6, '0')}-${recorder.outputSize}px-${entries.length}f-step${recorder.interval}.zip`;
+                downloadBlob(zip, filename);
+                resetRecordButton('RECORD ZIP');
+            } else {
+                resetRecordButton('NO FRAMES');
+                setTimeout(() => resetRecordButton(), 900);
+            }
+
+            isRecordingSequence = false;
+            sequenceRecorder = null;
+        }
+
+        function snapshotRuntimeState() {
+            return {
+                universeSeed,
+                universeDecoder,
+                currentEntity,
+                generationCount,
+                colorLimit,
+                randomnessLevel,
+                manualPaletteIndices: manualPaletteIndices.slice(),
+                lastActivePaletteIndices: lastActivePaletteIndices.slice(),
+                lastParams,
+                lastForwardState,
+                previousDecoderState,
+                lastLatentSpeed,
+                latentTrail: latentTrail.map(p => ({ x: p.x, y: p.y, speed: p.speed }))
+            };
+        }
+
+        function restoreRuntimeState(snapshot) {
+            universeSeed = snapshot.universeSeed;
+            universeDecoder = snapshot.universeDecoder;
+            currentEntity = snapshot.currentEntity;
+            generationCount = snapshot.generationCount;
+            colorLimit = snapshot.colorLimit;
+            randomnessLevel = snapshot.randomnessLevel;
+            manualPaletteIndices = snapshot.manualPaletteIndices.slice();
+            lastActivePaletteIndices = snapshot.lastActivePaletteIndices.slice();
+            lastParams = snapshot.lastParams;
+            lastForwardState = snapshot.lastForwardState;
+            previousDecoderState = snapshot.previousDecoderState;
+            lastLatentSpeed = snapshot.lastLatentSpeed;
+            latentTrail.length = 0;
+            for (const p of snapshot.latentTrail) latentTrail.push({ x: p.x, y: p.y, speed: p.speed });
+
+            syncControlUI();
+            updateText('gen-counter', generationCount);
+            updateMatrixUI(currentEntity);
+            drawArt(getCanvas(), currentEntity);
+        }
+
+        async function exportUniverseBatchZip() {
+            if (isRecordingUniverseBatch || isRecordingSequence) return;
+
+            const button = document.getElementById('universe-batch-btn');
+            const outputSize = getNumberInputValue('sequence-size', 2400, 1200, 4096);
+            const captureCanvas = document.createElement('canvas');
+            const entries = [];
+            const snapshot = snapshotRuntimeState();
+
+            captureCanvas.width = outputSize;
+            captureCanvas.height = outputSize;
+            isRecordingUniverseBatch = true;
+
+            if (button) {
+                button.disabled = true;
+                button.innerText = 'UNI 0/100';
+            }
+
+            try {
+                for (let i = 0; i < 100; i++) {
+                    universeSeed = createUniverseSeed();
+                    universeDecoder = new DecoderNetwork();
+                    currentEntity = new LatentEntity();
+                    generationCount = 0;
+                    colorLimit = 0;
+                    manualPaletteIndices = [];
+                    randomizeRuntimeControls();
+
+                    drawArt(captureCanvas, currentEntity, {
+                        updatePanels: false,
+                        generationCount: i
+                    });
+
+                    const blob = await canvasToPngBlob(captureCanvas);
+                    entries.push({
+                        name: `latent-universe-${String(i + 1).padStart(6, '0')}.png`,
+                        data: new Uint8Array(await blob.arrayBuffer())
+                    });
+
+                    if (button) button.innerText = `UNI ${i + 1}/100`;
+                    if (i % 5 === 4) await new Promise(resolve => requestAnimationFrame(resolve));
+                }
+
+                const zip = makeZipBlob(entries);
+                const filename = `latent-universe-batch-${outputSize}px-100.zip`;
+                downloadBlob(zip, filename);
+            } catch (err) {
+                console.error('[Universe batch export] Failed:', err);
+                if (button) button.innerText = 'BATCH FAILED';
+            } finally {
+                restoreRuntimeState(snapshot);
+                isRecordingUniverseBatch = false;
+                if (button) {
+                    setTimeout(() => {
+                        button.disabled = false;
+                        button.innerText = '100 UNIVERSES';
+                    }, 800);
+                }
+            }
+        }
+
+        function jumpToLatentMap(event) {
+            if (!currentEntity || !latentProjector.x || !latentProjector.y) return;
+
+            const canvas = event.currentTarget;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (event.clientX - rect.left) * scaleX;
+            const y = (event.clientY - rect.top) * scaleY;
+            const scale = latentMapViewport.scale || 1;
+            const targetX = (x - canvas.width / 2) / scale;
+            const targetY = (canvas.height / 2 - y) / scale;
+            const current = projectLatentTo2D(currentEntity.z);
+            const dx = clamp(targetX - current.x, -3, 3);
+            const dy = clamp(targetY - current.y, -3, 3);
+
+            for (let i = 0; i < LATENT_DIM; i++) {
+                currentEntity.z[i] += latentProjector.x[i] * dx + latentProjector.y[i] * dy;
+                currentEntity.velocity[i] *= 0.25;
+            }
+
+            generationCount++;
+            drawArt(getCanvas(), currentEntity);
+            updateText('gen-counter', generationCount);
+            updateMatrixUI(currentEntity);
+            saveState();
+        }
+
+        function hardReset() {
+            universeSeed = createUniverseSeed();
+            universeDecoder = new DecoderNetwork();
+            currentEntity = new LatentEntity();
+            generationCount = 0;
+            lastParams = null;
+            lastForwardState = null;
+            previousDecoderState = null;
+            latentTrail.length = 0;
+            lastPersistFrame = 0;
+            randomizeRuntimeControls();
+            manualPaletteIndices = [];
+            colorLimit = 0;
+            layerMode = 'auto';
+            activationMode = 'relu';
+
+            updateText('gen-counter', generationCount);
+            syncControlUI();
+            updateMatrixUI(currentEntity);
+            drawArt(getCanvas(), currentEntity);
+            saveState();
+
+            if (!isPaused) startAnimation();
+        }
+
+        function jumpLatentRegion() {
+            if (!currentEntity) return;
+            currentEntity.jump(0.55);
+            latentTrail.length = 0;
+            previousDecoderState = null;
+            drawArt(getCanvas(), currentEntity);
+            updateMatrixUI(currentEntity);
+            saveState();
+        }
+
+        function bindControls() {
+            const pauseBtn = document.getElementById('pause-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const jumpBtn = document.getElementById('jump-btn');
+            const modeBtn = document.getElementById('mode-btn');
+            const saveBtn = document.getElementById('save-btn');
+            const recordBtn = document.getElementById('record-btn');
+            const universeBatchBtn = document.getElementById('universe-batch-btn');
+            const langBtn = document.getElementById('lang-btn');
+            const colorInput = document.getElementById('color-count');
+            const randomnessInput = document.getElementById('randomness');
+            const formLinearBtn = document.getElementById('form-linear-btn');
+            const formRadialBtn = document.getElementById('form-radial-btn');
+            const layerAutoBtn = document.getElementById('layer-auto-btn');
+            const layerXBtn = document.getElementById('layer-x-btn');
+            const layerYBtn = document.getElementById('layer-y-btn');
+            const actReluBtn = document.getElementById('act-relu-btn');
+            const actLeakyBtn = document.getElementById('act-leaky-btn');
+            const actTanhBtn = document.getElementById('act-tanh-btn');
+            const actSwishBtn = document.getElementById('act-swish-btn');
+            const axisBothBtn = document.getElementById('axis-both-btn');
+            const axisXBtn = document.getElementById('axis-x-btn');
+            const axisYBtn = document.getElementById('axis-y-btn');
+            const paletteAutoBtn = document.getElementById('palette-auto-btn');
+            const latentMapCanvas = document.getElementById('latent-map-canvas');
+
+            if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
+            if (resetBtn) resetBtn.addEventListener('click', hardReset);
+            if (jumpBtn) jumpBtn.addEventListener('click', jumpLatentRegion);
+            if (modeBtn) modeBtn.addEventListener('click', toggleExhibitionMode);
+            if (saveBtn) saveBtn.addEventListener('click', exportMainCanvas);
+            if (recordBtn) recordBtn.addEventListener('click', toggleSequenceRecording);
+            if (universeBatchBtn) universeBatchBtn.addEventListener('click', exportUniverseBatchZip);
+            if (langBtn) langBtn.addEventListener('click', toggleLanguage);
+            if (colorInput) colorInput.addEventListener('input', event => setColorLimit(event.target.value));
+            if (randomnessInput) randomnessInput.addEventListener('input', event => setRandomness(event.target.value));
+            if (formLinearBtn) formLinearBtn.addEventListener('click', () => setGeometryMode('linear'));
+            if (formRadialBtn) formRadialBtn.addEventListener('click', () => setGeometryMode('radial'));
+            if (layerAutoBtn) layerAutoBtn.addEventListener('click', () => setLayerMode('auto'));
+            if (layerXBtn) layerXBtn.addEventListener('click', () => setLayerMode('xTop'));
+            if (layerYBtn) layerYBtn.addEventListener('click', () => setLayerMode('yTop'));
+            if (actReluBtn) actReluBtn.addEventListener('click', () => setActivationMode('relu'));
+            if (actLeakyBtn) actLeakyBtn.addEventListener('click', () => setActivationMode('leaky'));
+            if (actTanhBtn) actTanhBtn.addEventListener('click', () => setActivationMode('tanh'));
+            if (actSwishBtn) actSwishBtn.addEventListener('click', () => setActivationMode('swish'));
+            if (axisBothBtn) axisBothBtn.addEventListener('click', () => setAxisMode('both'));
+            if (axisXBtn) axisXBtn.addEventListener('click', () => setAxisMode('x'));
+            if (axisYBtn) axisYBtn.addEventListener('click', () => setAxisMode('y'));
+            if (paletteAutoBtn) paletteAutoBtn.addEventListener('click', clearManualPalette);
+            if (latentMapCanvas) latentMapCanvas.addEventListener('click', jumpToLatentMap);
+        }
+
+        function runSelfTests() {
+            const decoder = new DecoderNetwork();
+            const entity = new LatentEntity();
+
+            assert(decoder instanceof DecoderNetwork, 'DecoderNetwork should initialize');
+            assert(entity instanceof LatentEntity, 'LatentEntity should initialize');
+            assert(entity.z.length === LATENT_DIM, 'Latent vector dimension should match LATENT_DIM');
+            assert(entity.velocity.length === LATENT_DIM, 'Velocity vector dimension should match LATENT_DIM');
+
+            const output = decoder.decode(entity.z);
+            assert(output instanceof Float32Array, 'Decoder output should be Float32Array');
+            assert(output.length === OUT_DIM, 'Decoder output length should match OUT_DIM');
+
+            const forwardState = decoder.forward(entity.z);
+            assert(forwardState.h1.length === HIDDEN_1, 'Forward h1 length should match HIDDEN_1');
+            assert(forwardState.h2.length === HIDDEN_2, 'Forward h2 length should match HIDDEN_2');
+            assert(forwardState.out.length === OUT_DIM, 'Forward out length should match OUT_DIM');
+
+            const beforeStep = entity.z[0];
+            entity.step(0.04);
+            assert(Number.isFinite(entity.z[0]), 'Latent step should keep finite values');
+            assert(beforeStep !== entity.z[0], 'Latent step should change state');
+
+            const params = entity.getPhysicalParams(decoder);
+            assert(Array.isArray(params.paletteIndices), 'Palette index list should be an array');
+            assert(params.paletteIndices.length >= 1, 'Palette should contain at least one active color');
+            assert(params.paletteIndices.length <= 32, 'Palette should be capped at 32 colors');
+            assert(params.vDensity > 0, 'vDensity should be positive');
+            assert(params.hDensity > 0, 'hDensity should be positive');
+            assert(params.stepMod > 0, 'stepMod should be positive');
+            assert(params.vSkipRate >= 0 && params.vSkipRate <= 0.28, 'vSkipRate out of expected range');
+            assert(params.hSkipRate >= 0 && params.hSkipRate <= 0.28, 'hSkipRate out of expected range');
+            assert(params._forwardState && params._forwardState.out.length === OUT_DIM, 'Params should include forward state');
+
+            assert(latentProjector.x instanceof Float32Array, 'latentProjector.x should initialize');
+            assert(latentProjector.y instanceof Float32Array, 'latentProjector.y should initialize');
+
+            const projected = projectLatentTo2D(entity.z);
+            assert(Number.isFinite(projected.x) && Number.isFinite(projected.y), '2D latent projection should be finite');
+
+            const testStripes = generateStripes(
+                'vertical',
+                100,
+                {
+                    density: 0.03,
+                    widthMean: 1.0,
+                    widthJitter: 1.0,
+                    skipRate: 0.0,
+                    minWidth: 0.01,
+                    clusterBias: 1.0,
+                    zBias: 0.0
+                },
+                () => '#000000',
+                {
+                    whitespaceBias: 0.0,
+                    zSpread: 1.0,
+                    globalZBias: 0.0
+                }
+            );
+
+            assert(testStripes.length > 0, 'generateStripes should create stripes');
+            assert(testStripes.every(s => Number.isInteger(s.pos)), 'Stripe positions should be pixel-aligned integers');
+            assert(testStripes.every(s => Number.isInteger(s.size)), 'Stripe sizes should be pixel-aligned integers');
+            assert(testStripes.every(s => s.size >= 1), 'Stripe sizes should be at least 1 pixel');
+
+            const testRadial = generateRadialSegments(
+                'sector',
+                TAU,
+                {
+                    density: 0.2,
+                    widthMean: 1.0,
+                    widthJitter: 1.0,
+                    skipRate: 0.0,
+                    minWidth: 0.02,
+                    clusterBias: 1.0,
+                    zBias: 0.0
+                },
+                () => '#000000',
+                {
+                    whitespaceBias: 0.0,
+                    zSpread: 1.0,
+                    globalZBias: 0.0
+                }
+            );
+
+            assert(testRadial.length > 0, 'generateRadialSegments should create radial parts');
+            assert(testRadial.every(s => s.pos >= 0 && s.size > 0), 'Radial parts should have positive spans');
+
+            const beforeJump = entity.z[1];
+            entity.jump(0.95);
+            assert(Number.isFinite(entity.z[1]), 'Latent jump should keep finite values');
+            assert(beforeJump !== entity.z[1], 'Latent jump should change state');
+
+            assert(typeof hardReset === 'function', 'hardReset should be defined');
+            assert(typeof togglePause === 'function', 'togglePause should be defined');
+            assert(typeof jumpLatentRegion === 'function', 'jumpLatentRegion should be defined');
+
+            const colors = params.paletteIndices.map(idx => FULL_PALETTE[idx]);
+            assert(colors.every(c => typeof c === 'string' && c.startsWith('#')), 'Palette colors should be valid hex strings');
+
+            console.info('[Self-test] All checks passed.');
+        }
+
+        function bootstrap() {
+            if (hasBootstrapped) return;
+            hasBootstrapped = true;
+
+            initMatrixUI();
+            initLatentProjector();
+            initPaletteUI();
+
+            if (!restoreSavedState()) {
+                universeSeed = createUniverseSeed();
+                universeDecoder = new DecoderNetwork();
+                currentEntity = new LatentEntity();
+                generationCount = 0;
+                colorLimit = 0;
+                randomizeRuntimeControls();
+                manualPaletteIndices = [];
+                axisMode = 'both';
+                geometryMode = 'linear';
+                layerMode = 'auto';
+                activationMode = 'relu';
+                isExhibitionMode = false;
+                currentLanguage = 'en';
+            }
+
+            lastParams = null;
+            lastForwardState = null;
+            previousDecoderState = null;
+            isPaused = false;
+
+            bindControls();
+            setPausedVisual(false);
+            setExhibitionMode(isExhibitionMode, false);
+            applyLanguage();
+            syncControlUI();
+            updateText('gen-counter', generationCount);
+            updateMatrixUI(currentEntity);
+            drawArt(getCanvas(), currentEntity);
+            runSelfTests();
+            startAnimation();
+        }
+
+        window.togglePause = togglePause;
+        window.hardReset = hardReset;
+        window.jumpLatentRegion = jumpLatentRegion;
+        window.setAxisMode = setAxisMode;
+        window.setGeometryMode = setGeometryMode;
+        window.setLayerMode = setLayerMode;
+        window.setActivationMode = setActivationMode;
+        window.setColorLimit = setColorLimit;
+        window.setRandomness = setRandomness;
+        window.toggleExhibitionMode = toggleExhibitionMode;
+        window.clearManualPalette = clearManualPalette;
+        window.toggleSequenceRecording = toggleSequenceRecording;
+        window.exportUniverseBatchZip = exportUniverseBatchZip;
+
+        window.addEventListener('DOMContentLoaded', bootstrap);
+    </script>
+</body>
+</html>
